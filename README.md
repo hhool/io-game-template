@@ -93,6 +93,29 @@ window.gameControls.configure({ controls: { touchMode: "point", prefer: "touch" 
 window.gameControls.configure({ controls: { mouseMode: "hold" } })
 ```
 
+## Minimap
+The client renders a realtime minimap overlay (players/pellets + viewport rectangle).
+
+Configure it in `server/public/config.json` under `minimap`:
+- `minimap.enabled`: `true | false`
+- `minimap.position`: `"top-left" | "top-right" | "bottom-left" | "bottom-right" | "custom"`
+- `minimap.size`: number (square size in px). Or set `minimap.width` / `minimap.height`.
+- `minimap.margin`: corner preset margin in px
+- `minimap.opacity`: 0..1
+
+Custom position (offsets from an anchor corner):
+- `minimap.anchor`: `"top-left" | "top-right" | "bottom-left" | "bottom-right"`
+- `minimap.x`, `minimap.y`: offset in px from the chosen anchor
+
+Runtime example:
+```js
+// Move minimap to bottom-left
+window.gameControls.configure({ minimap: { position: "bottom-left" } })
+
+// Custom: 20px from bottom-right, larger minimap
+window.gameControls.configure({ minimap: { position: "custom", anchor: "bottom-right", x: 20, y: 20, size: 220 } })
+```
+
 ## Protocol (implemented)
 
 ### Identity & reconnect

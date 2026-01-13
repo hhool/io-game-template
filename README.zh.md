@@ -93,6 +93,29 @@ window.gameControls.configure({ controls: { touchMode: "point", prefer: "touch" 
 window.gameControls.configure({ controls: { mouseMode: "hold" } })
 ```
 
+## 小地图（minimap）
+前端会渲染实时小地图（玩家/豆子 + 当前视野矩形）。
+
+在 `server/public/config.json` 里的 `minimap` 配置：
+- `minimap.enabled`: `true | false`（启用/禁用）
+- `minimap.position`: `"top-left" | "top-right" | "bottom-left" | "bottom-right" | "custom"`（四角/自定义）
+- `minimap.size`: 数字（正方形像素大小），或使用 `minimap.width` / `minimap.height`
+- `minimap.margin`: 四角模式下的边距（像素）
+- `minimap.opacity`: 0..1
+
+自定义位置（从锚点角落往里偏移）：
+- `minimap.anchor`: `"top-left" | "top-right" | "bottom-left" | "bottom-right"`
+- `minimap.x`, `minimap.y`: 相对锚点的偏移像素
+
+运行时示例：
+```js
+// 移动到左下角
+window.gameControls.configure({ minimap: { position: "bottom-left" } })
+
+// 自定义：距离右下角 20px，并放大
+window.gameControls.configure({ minimap: { position: "custom", anchor: "bottom-right", x: 20, y: 20, size: 220 } })
+```
+
 ## 下一步扩展方向
 - PaperIO：加入“领地填充 + 尾迹碰撞 + 回到领地闭合”
 - Agar：加入“玩家吞噬 + 质量分裂/喷射 + 视野缩放”

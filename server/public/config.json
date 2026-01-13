@@ -10,6 +10,7 @@
   "minimap": {
     "enabled": true,
     "position": "top-right",
+    "anchor": "top-left",
     "size": 160,
     "margin": 12,
     "x": 12,

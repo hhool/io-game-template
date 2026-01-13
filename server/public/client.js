@@ -251,6 +251,7 @@ const defaultConfig = {
   minimap: {
     enabled: true,
     position: "top-right", // top-left | top-right | bottom-left | bottom-right | custom
+    anchor: "top-left", // used when position === 'custom'
     size: 160, // square size in px (number) OR set width/height
     width: null,
     height: null,
@@ -375,6 +376,7 @@ function minimapCfg() {
   return {
     enabled: m.enabled !== false,
     position: typeof m.position === "string" ? m.position : defaultConfig.minimap.position,
+    anchor: typeof m.anchor === "string" ? m.anchor : defaultConfig.minimap.anchor,
     width: Math.max(60, Math.min(420, width)),
     height: Math.max(60, Math.min(420, height)),
     margin: typeof m.margin === "number" ? m.margin : defaultConfig.minimap.margin,
@@ -410,8 +412,33 @@ function minimapRect() {
     y = window.innerHeight - margin - h;
   }
   if (pos === "custom") {
-    x = m.x;
-    y = m.y;
+    const aRaw = (m.anchor || "top-left").toLowerCase();
+    const anchor =
+      aRaw === "tl" || aRaw === "top-left" || aRaw === "left-top"
+        ? "top-left"
+        : aRaw === "tr" || aRaw === "top-right" || aRaw === "right-top"
+          ? "top-right"
+          : aRaw === "bl" || aRaw === "bottom-left" || aRaw === "left-bottom"
+            ? "bottom-left"
+            : aRaw === "br" || aRaw === "bottom-right" || aRaw === "right-bottom"
+              ? "bottom-right"
+              : "top-left";
+
+    const ox = m.x;
+    const oy = m.y;
+    if (anchor === "top-left") {
+      x = ox;
+      y = oy;
+    } else if (anchor === "top-right") {
+      x = window.innerWidth - w - ox;
+      y = oy;
+    } else if (anchor === "bottom-left") {
+      x = ox;
+      y = window.innerHeight - h - oy;
+    } else {
+      x = window.innerWidth - w - ox;
+      y = window.innerHeight - h - oy;
+    }
   }
 
   // Clamp to screen
