@@ -62,6 +62,37 @@ npm run dev
 ## Native WebSocket
 - `ws://localhost:6868/ws` (read-only state stream example)
 
+## Controls configuration
+Client controls can be enabled/disabled and mode-selected via:
+- Static config file: `server/public/config.json`
+- Runtime overrides (persisted to localStorage): `window.gameControls.configure(...)`
+
+### `config.json`
+See `server/public/config.json`:
+- `controls.enableKeyboard` (default: `true`)
+- `controls.enableMouse` (default: `true`)
+- `controls.mouseMode`: `"point" | "hold"`
+  - `point`: move mouse over the canvas to steer
+  - `hold`: steer only while holding a mouse button
+- `controls.enableTouch` (default: `true` on touch devices)
+- `controls.touchMode`: `"joystick" | "point" | "off"`
+  - `joystick`: drag joystick
+  - `point`: touch-and-hold towards a point
+- `controls.prefer`: `"touch" | "mouse" | "keyboard"` (input priority)
+
+### Runtime overrides
+Open DevTools console:
+```js
+// Disable touch on desktop
+window.gameControls.configure({ controls: { enableTouch: false, prefer: "mouse" } })
+
+// Switch mobile to point-to-steer mode
+window.gameControls.configure({ controls: { touchMode: "point", prefer: "touch" } })
+
+// Use hold-to-steer mouse mode
+window.gameControls.configure({ controls: { mouseMode: "hold" } })
+```
+
 ## Protocol (implemented)
 
 ### Identity & reconnect

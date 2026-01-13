@@ -62,6 +62,37 @@ npm run dev
 ## 原生 WebSocket
 - `ws://localhost:6868/ws`（只读推送 state 示例）
 
+## 控制配置（输入方式开关/模式）
+前端输入方式支持通过以下两种方式配置：
+- 静态配置文件：`server/public/config.json`
+- 运行时覆盖（会持久化到 localStorage）：`window.gameControls.configure(...)`
+
+### `config.json`
+参考 `server/public/config.json`：
+- `controls.enableKeyboard`（默认：`true`）
+- `controls.enableMouse`（默认：`true`）
+- `controls.mouseMode`: `"point" | "hold"`
+	- `point`：鼠标在画布上移动即可控制方向
+	- `hold`：按住鼠标按键时才控制方向
+- `controls.enableTouch`（默认：触摸设备为 `true`）
+- `controls.touchMode`: `"joystick" | "point" | "off"`
+	- `joystick`：摇杆拖动
+	- `point`：按住屏幕某点朝该点控制
+- `controls.prefer`: `"touch" | "mouse" | "keyboard"`（输入优先级）
+
+### 运行时覆盖
+打开浏览器 DevTools 控制台：
+```js
+// 桌面端禁用触摸输入
+window.gameControls.configure({ controls: { enableTouch: false, prefer: "mouse" } })
+
+// 手机端切换为 point 模式
+window.gameControls.configure({ controls: { touchMode: "point", prefer: "touch" } })
+
+// 鼠标切换为按住才控制
+window.gameControls.configure({ controls: { mouseMode: "hold" } })
+```
+
 ## 下一步扩展方向
 - PaperIO：加入“领地填充 + 尾迹碰撞 + 回到领地闭合”
 - Agar：加入“玩家吞噬 + 质量分裂/喷射 + 视野缩放”
