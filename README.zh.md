@@ -20,6 +20,35 @@ npm run dev
 浏览器打开：
 - http://localhost:6868/
 
+## 手机端浏览器测试（局域网 LAN）
+只要手机和 Mac 在同一个 Wi‑Fi 下，就可以用手机浏览器直接打开进行测试。
+
+启动 LAN 监听（绑定到 0.0.0.0）：
+```bash
+cd server
+./scripts/dev_lan.sh start
+```
+
+然后用手机打开脚本输出的 LAN 地址（示例）：
+- http://192.168.x.x:6868/
+
+快速排查：
+```bash
+curl -fsS http://127.0.0.1:6868/healthz
+curl -fsS http://<LAN_IP>:6868/healthz
+./scripts/dev_lan.sh logs
+./scripts/dev_lan.sh status
+```
+
+停止：
+```bash
+./scripts/dev_lan.sh stop
+```
+
+注意：
+- 手机打不开时，检查 macOS 防火墙是否拦截，以及两台设备是否在同一网段。
+- 脚本会把 pid/log 写到 `/tmp/1wlgame6868.pid` 和 `/tmp/1wlgame6868.log`。
+
 ## 运行（带 Redis adapter）
 ```bash
 cd ..

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +16,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number.parseInt(process.env.PORT ?? '6868', 10);
+const HOST = process.env.HOST ?? '0.0.0.0';
 const REDIS_URL = process.env.REDIS_URL || '';
+
+function pickLanIPv4() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const ni of nets[name] || []) {
+      if (!ni) continue;
+      if (ni.family !== 'IPv4') continue;
+      if (ni.internal) continue;
+      return ni.address;
+    }
+  }
+  return null;
+}
 
 const app = express();
 app.disable('x-powered-by');
@@ -262,7 +277,10 @@ setInterval(() => {
   }
 }, Math.floor(1000 / 15));
 
-server.listen(PORT, () => {
-  console.log('Express and Socket.IO are listening on port', PORT);
-  console.log('WS endpoint:', `ws://localhost:${PORT}/ws`);
+server.listen(PORT, HOST, () => {
+  const lan = pickLanIPv4();
+  console.log('Express and Socket.IO are listening on', `${HOST}:${PORT}`);
+  console.log('Local:', `http://127.0.0.1:${PORT}/`);
+  if (lan) console.log('LAN (phone):', `http://${lan}:${PORT}/`);
+  console.log('WS endpoint:', `ws://127.0.0.1:${PORT}/ws`);
 });

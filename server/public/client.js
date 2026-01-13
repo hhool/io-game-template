@@ -79,6 +79,11 @@ const I18N = {
     spectate: "Spectate",
     leave: "Leave",
     hint: "WASD/Arrow keys to move, Shift to boost (demo).",
+    hintMouse: "Arrow keys or move mouse to steer. Right mouse = boost.",
+    hintTouch: "Touch & drag to move. Two fingers = boost.",
+    hintTouchPoint: "Touch and hold to steer towards that point. Two fingers = boost.",
+    touchGuide: "Drag to move",
+    touchGuidePoint: "Hold to steer",
     leaderboard: "Leaderboard",
     connecting: "connecting…",
     connected: "connected",
@@ -100,6 +105,11 @@ const I18N = {
     spectate: "Наблюдать",
     leave: "Выйти",
     hint: "WASD/Стрелки — движение, Shift — ускорение.",
+    hintMouse: "Стрелки или ведите мышью для управления. Правая кнопка — ускорение.",
+    hintTouch: "Коснитесь и тяните для движения. Два пальца — ускорение.",
+    hintTouchPoint: "Коснитесь и удерживайте, чтобы вести к точке. Два пальца — ускорение.",
+    touchGuide: "Тяните для движения",
+    touchGuidePoint: "Удерживайте для управления",
     leaderboard: "Таблица лидеров",
     connecting: "подключение…",
     connected: "подключено",
@@ -121,6 +131,11 @@ const I18N = {
     spectate: "Observer",
     leave: "Quitter",
     hint: "WASD/Flèches pour bouger, Shift pour booster.",
+    hintMouse: "Flèches ou déplacez la souris pour diriger. Clic droit = boost.",
+    hintTouch: "Touchez et faites glisser pour bouger. Deux doigts = boost.",
+    hintTouchPoint: "Touchez et maintenez pour viser ce point. Deux doigts = boost.",
+    touchGuide: "Glissez pour bouger",
+    touchGuidePoint: "Maintenez pour diriger",
     leaderboard: "Classement",
     connecting: "connexion…",
     connected: "connecté",
@@ -142,6 +157,11 @@ const I18N = {
     spectate: "观战",
     leave: "离开",
     hint: "WASD/方向键移动，Shift 加速（示例）。",
+    hintMouse: "方向键或移动鼠标控制方向；右键加速。",
+    hintTouch: "手指按住拖动控制方向；双指按住加速。",
+    hintTouchPoint: "按住触摸点控制朝向；双指按住加速。",
+    touchGuide: "拖动控制方向",
+    touchGuidePoint: "按住控制方向",
     leaderboard: "排行榜",
     connecting: "连接中…",
     connected: "已连接",
@@ -163,6 +183,11 @@ const I18N = {
     spectate: "Zuschauen",
     leave: "Verlassen",
     hint: "WASD/Pfeile zum Bewegen, Shift für Boost.",
+    hintMouse: "Pfeile oder Maus bewegen zum Steuern. Rechtsklick = Boost.",
+    hintTouch: "Berühren und ziehen zum Bewegen. Zwei Finger = Boost.",
+    hintTouchPoint: "Berühren und halten zum Steuern. Zwei Finger = Boost.",
+    touchGuide: "Ziehen zum Bewegen",
+    touchGuidePoint: "Halten zum Steuern",
     leaderboard: "Rangliste",
     connecting: "verbinde…",
     connected: "verbunden",
@@ -184,6 +209,11 @@ const I18N = {
     spectate: "مشاهدة",
     leave: "مغادرة",
     hint: "WASD/الأسهم للحركة، Shift للتسريع.",
+    hintMouse: "الأسهم أو حرّك الفأرة للتوجيه. زر الفأرة الأيمن = تسريع.",
+    hintTouch: "المس واسحب للحركة. إصبعان = تسريع.",
+    hintTouchPoint: "المس واضغط للتوجيه نحو النقطة. إصبعان = تسريع.",
+    touchGuide: "اسحب للحركة",
+    touchGuidePoint: "اضغط للتوجيه",
     leaderboard: "لوحة الصدارة",
     connecting: "جارٍ الاتصال…",
     connected: "متصل",
@@ -201,6 +231,178 @@ let nick = sanitizeNick(profile.nick);
 let profileConfirmed = false;
 let autoQuickRequested = false;
 let joinInFlight = false;
+
+// --- Input model (keyboard + touch) ---
+const STORAGE_TOUCH_GUIDE = "1wlgame_touch_guide_seen_v1";
+const STORAGE_CFG = "1wlgame_cfg_v1";
+const isTouchCapable =
+  (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
+  (typeof window !== "undefined" && "ontouchstart" in window);
+
+const defaultConfig = {
+  controls: {
+    enableKeyboard: true,
+    enableMouse: true,
+    mouseMode: "point", // point
+    enableTouch: isTouchCapable,
+    touchMode: isTouchCapable ? "joystick" : "off", // joystick | point | off
+    prefer: isTouchCapable ? "touch" : "mouse", // touch | mouse | keyboard
+  },
+  guide: {
+    touchGuideOnFirstUse: true,
+  },
+};
+
+function deepMerge(a, b) {
+  if (!b || typeof b !== "object") return a;
+  const out = Array.isArray(a) ? [...a] : { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    if (v && typeof v === "object" && !Array.isArray(v) && typeof out[k] === "object") {
+      out[k] = deepMerge(out[k], v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function loadLocalConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_CFG);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalConfig(overrides) {
+  try {
+    localStorage.setItem(STORAGE_CFG, JSON.stringify(overrides || {}));
+  } catch {
+    // ignore
+  }
+}
+
+let runtimeOverrides = loadLocalConfig() || {};
+let config = deepMerge(defaultConfig, runtimeOverrides);
+
+const inputModel = {
+  useKeyboard: true,
+  useTouch: isTouchCapable,
+  useMouse: true,
+  keyboard: { ax: 0, ay: 0, boost: false },
+  mouse: { ax: 0, ay: 0, boost: false, active: false },
+  touch: { ax: 0, ay: 0, boost: false, active: false },
+  get() {
+    const prefer = config?.controls?.prefer || "touch";
+
+    const order =
+      prefer === "mouse"
+        ? ["mouse", "touch", "keyboard"]
+        : prefer === "keyboard"
+          ? ["keyboard", "touch", "mouse"]
+          : ["touch", "mouse", "keyboard"];
+
+    for (const k of order) {
+      if (k === "touch" && this.useTouch && this.touch.active) return this.touch;
+      if (k === "mouse" && this.useMouse && this.mouse.active) return this.mouse;
+      if (k === "keyboard" && this.useKeyboard) return this.keyboard;
+    }
+    return { ax: 0, ay: 0, boost: false };
+  },
+  setKeyboard(ax, ay, boost) {
+    this.keyboard = { ax, ay, boost: Boolean(boost) };
+  },
+  setMouse(ax, ay, boost, active) {
+    this.mouse = { ax, ay, boost: Boolean(boost), active: Boolean(active) };
+  },
+  setTouch(ax, ay, boost, active) {
+    this.touch = { ax, ay, boost: Boolean(boost), active: Boolean(active) };
+  },
+  resetMouse() {
+    this.setMouse(0, 0, false, false);
+  },
+  resetTouch() {
+    this.setTouch(0, 0, false, false);
+  },
+};
+
+// Touch joystick state for guide/rendering
+const joystick = {
+  enabled: isTouchCapable,
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  x: 0,
+  y: 0,
+  maxR: 70,
+  deadzone: 10,
+  showGuide:
+    isTouchCapable &&
+    config?.guide?.touchGuideOnFirstUse !== false &&
+    localStorage.getItem(STORAGE_TOUCH_GUIDE) !== "1",
+};
+
+const pointControl = {
+  enabled: isTouchCapable,
+  active: false,
+  pointerId: null,
+  x: 0,
+  y: 0,
+};
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function normalizeStick(dx, dy) {
+  const len = Math.hypot(dx, dy);
+  if (len < joystick.deadzone) return { ax: 0, ay: 0 };
+  const capped = Math.min(joystick.maxR, len);
+  const nx = dx / (len || 1);
+  const ny = dy / (len || 1);
+  const mag = capped / joystick.maxR;
+  return { ax: nx * mag, ay: ny * mag };
+}
+
+function touchBoostFromEvent(e) {
+  // PointerEvent doesn't expose touches; use navigator maxTouchPoints + active pointers heuristic.
+  // We treat "two fingers down" as boost by tracking active pointer count.
+  return activePointers.size >= 2;
+}
+
+function setTouchGuideSeen() {
+  if (!joystick.showGuide) return;
+  joystick.showGuide = false;
+  localStorage.setItem(STORAGE_TOUCH_GUIDE, "1");
+}
+
+function applyConfig(nextCfg, opts) {
+  config = deepMerge(config, nextCfg || {});
+  if (opts?.persist) {
+    runtimeOverrides = deepMerge(runtimeOverrides, nextCfg || {});
+    saveLocalConfig(runtimeOverrides);
+  }
+
+  const c = config.controls || {};
+  inputModel.useKeyboard = c.enableKeyboard !== false;
+  inputModel.useMouse = c.enableMouse !== false;
+  inputModel.useTouch = c.enableTouch !== false && isTouchCapable;
+
+  const touchMode = c.touchMode || "joystick";
+  joystick.enabled = inputModel.useTouch && touchMode === "joystick";
+  pointControl.enabled = inputModel.useTouch && touchMode === "point";
+
+  // Update guide behavior
+  joystick.showGuide =
+    inputModel.useTouch &&
+    (joystick.enabled || pointControl.enabled) &&
+    config?.guide?.touchGuideOnFirstUse !== false &&
+    localStorage.getItem(STORAGE_TOUCH_GUIDE) !== "1";
+
+  applyLang();
+}
 
 function t(key) {
   const dict = I18N[lang] || I18N.en;
@@ -220,12 +422,58 @@ function applyLang() {
   btnQuick.textContent = t("quick");
   btnSpectate.textContent = t("spectate");
   btnLeave.textContent = t("leave");
-  hintEl.textContent = t("hint");
+  // Hint depends on current input scheme
+  if (joystick.enabled) hintEl.textContent = t("hintTouch");
+  else if (pointControl.enabled) hintEl.textContent = t("hintTouchPoint");
+  else if (inputModel.useMouse) hintEl.textContent = t("hintMouse") || t("hint");
+  else hintEl.textContent = t("hint");
   lbTitleEl.textContent = t("leaderboard");
 
   recentTitleEl.textContent = t("recent");
   renderStats();
 }
+
+function setTouchControlsEnabled(enabled) {
+  inputModel.useTouch = Boolean(enabled) && isTouchCapable;
+  if (!inputModel.useTouch) inputModel.resetTouch();
+  const touchMode = config?.controls?.touchMode || "joystick";
+  joystick.enabled = inputModel.useTouch && touchMode === "joystick";
+  pointControl.enabled = inputModel.useTouch && touchMode === "point";
+  applyLang();
+}
+
+function setKeyboardControlsEnabled(enabled) {
+  inputModel.useKeyboard = Boolean(enabled);
+}
+
+function setMouseControlsEnabled(enabled) {
+  inputModel.useMouse = Boolean(enabled);
+  if (!inputModel.useMouse) inputModel.resetMouse();
+  applyLang();
+}
+
+// Expose a tiny API for debugging/feature flags
+window.gameControls = {
+  setTouchControlsEnabled,
+  setKeyboardControlsEnabled,
+  setMouseControlsEnabled,
+  configure: (partial) => applyConfig(partial, { persist: true }),
+  getConfig: () => JSON.parse(JSON.stringify(config)),
+  getInput: () => ({ ...inputModel.get() }),
+};
+
+// Apply defaults + local overrides immediately
+applyConfig(null, { persist: false });
+
+// Load config.json (optional)
+fetch("/config.json", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : null))
+  .then((cfg) => {
+    if (cfg) applyConfig(cfg, { persist: false });
+  })
+  .catch(() => {
+    // ignore
+  });
 
 function renderStats() {
   const best = Math.max(0, profile.bestScore | 0);
@@ -346,6 +594,132 @@ const keys = new Set();
 window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
+const activePointers = new Set();
+
+function getCanvasCenterClient() {
+  const r = canvas.getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+}
+
+// Unified pointer-based touch joystick
+canvas.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (!inputModel.useTouch) return;
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    activePointers.add(e.pointerId);
+
+    // Touch point mode: steer towards screen point
+    if (pointControl.enabled) {
+      if (!pointControl.active) {
+        pointControl.active = true;
+        pointControl.pointerId = e.pointerId;
+      }
+      pointControl.x = e.clientX;
+      pointControl.y = e.clientY;
+      setTouchGuideSeen();
+
+      const { cx, cy } = getCanvasCenterClient();
+      const dx = pointControl.x - cx;
+      const dy = pointControl.y - cy;
+      const v = normalizeStick(dx, dy);
+      inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
+      return;
+    }
+
+    if (!joystick.enabled) return;
+
+    // Start controlling with the first active pointer only
+    if (!joystick.active) {
+      joystick.active = true;
+      joystick.pointerId = e.pointerId;
+      joystick.startX = e.clientX;
+      joystick.startY = e.clientY;
+      joystick.x = e.clientX;
+      joystick.y = e.clientY;
+      setTouchGuideSeen();
+
+      // Immediately take over input (even before dragging)
+      const boost = touchBoostFromEvent(e);
+      inputModel.setTouch(0, 0, boost, true);
+    } else {
+      // Non-controlling pointer down: update boost state
+      const boost = touchBoostFromEvent(e);
+      const cur = inputModel.touch;
+      if (cur.active) inputModel.setTouch(cur.ax, cur.ay, boost, true);
+    }
+  },
+  { passive: true }
+);
+
+canvas.addEventListener(
+  "pointermove",
+  (e) => {
+    if (!inputModel.useTouch) return;
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+
+    if (pointControl.enabled) {
+      if (!pointControl.active) return;
+      if (e.pointerId !== pointControl.pointerId) return;
+      pointControl.x = e.clientX;
+      pointControl.y = e.clientY;
+      const { cx, cy } = getCanvasCenterClient();
+      const dx = pointControl.x - cx;
+      const dy = pointControl.y - cy;
+      const v = normalizeStick(dx, dy);
+      inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
+      return;
+    }
+
+    if (!joystick.enabled) return;
+    if (!joystick.active) return;
+    if (e.pointerId !== joystick.pointerId) return;
+    joystick.x = e.clientX;
+    joystick.y = e.clientY;
+
+    const dx = joystick.x - joystick.startX;
+    const dy = joystick.y - joystick.startY;
+    const v = normalizeStick(dx, dy);
+    inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
+  },
+  { passive: true }
+);
+
+function endPointer(e) {
+  if (!inputModel.useTouch) return;
+  activePointers.delete(e.pointerId);
+
+  if (pointControl.enabled) {
+    if (pointControl.active && e.pointerId === pointControl.pointerId) {
+      pointControl.active = false;
+      pointControl.pointerId = null;
+      inputModel.resetTouch();
+    } else if (pointControl.active) {
+      const boost = touchBoostFromEvent(e);
+      const tcur = inputModel.touch;
+      inputModel.setTouch(tcur.ax, tcur.ay, boost, true);
+    }
+    return;
+  }
+
+  if (!joystick.enabled) return;
+  if (joystick.active && e.pointerId === joystick.pointerId) {
+    joystick.active = false;
+    joystick.pointerId = null;
+    inputModel.resetTouch();
+  } else {
+    // pointer lifted that wasn't the controlling one; update boost state
+    if (joystick.active) {
+      const boost = touchBoostFromEvent(e);
+      const tcur = inputModel.touch;
+      inputModel.setTouch(tcur.ax, tcur.ay, boost, true);
+    }
+  }
+}
+
+canvas.addEventListener("pointerup", endPointer, { passive: true });
+canvas.addEventListener("pointercancel", endPointer, { passive: true });
+
 function getAxis() {
   let ax = 0;
   let ay = 0;
@@ -354,8 +728,86 @@ function getAxis() {
   if (keys.has("arrowup") || keys.has("w")) ay -= 1;
   if (keys.has("arrowdown") || keys.has("s")) ay += 1;
   const boost = keys.has("shift");
-  return { ax, ay, boost };
+  inputModel.setKeyboard(ax, ay, boost);
+  return inputModel.get();
 }
+
+// Desktop mouse control (hold mouse button -> steer)
+function mouseVecFromEvent(e) {
+  const { cx, cy } = getCanvasCenterClient();
+  const dx = e.clientX - cx;
+  const dy = e.clientY - cy;
+  return normalizeStick(dx, dy);
+}
+
+function mouseMode() {
+  return config?.controls?.mouseMode || "point";
+}
+
+function updateMouseFromEvent(e) {
+  if (!inputModel.useMouse) return;
+  const v = mouseVecFromEvent(e);
+  const boost = (e.buttons & 2) !== 0 || e.shiftKey;
+  const mode = mouseMode();
+  if (mode === "hold") {
+    const active = (e.buttons & 1) !== 0 || (e.buttons & 2) !== 0;
+    if (!active) return inputModel.resetMouse();
+    return inputModel.setMouse(v.ax, v.ay, boost, true);
+  }
+  // mode: point (default)
+  return inputModel.setMouse(v.ax, v.ay, boost, true);
+}
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+canvas.addEventListener(
+  "mouseleave",
+  () => {
+    inputModel.resetMouse();
+  },
+  { passive: true }
+);
+
+canvas.addEventListener(
+  "mousedown",
+  (e) => {
+    if (!inputModel.useMouse) return;
+    if (e.button !== 0 && e.button !== 2) return;
+    updateMouseFromEvent(e);
+  },
+  { passive: true }
+);
+
+window.addEventListener(
+  "mousemove",
+  (e) => {
+    if (!inputModel.useMouse) return;
+    // In point mode we always steer while cursor is over the canvas.
+    if (mouseMode() === "point") {
+      if (e.target !== canvas) return;
+      updateMouseFromEvent(e);
+      return;
+    }
+    // In hold mode, only steer while mouse buttons are held.
+    if (!inputModel.mouse.active) return;
+    updateMouseFromEvent(e);
+  },
+  { passive: true }
+);
+
+window.addEventListener(
+  "mouseup",
+  (e) => {
+    if (!inputModel.useMouse) return;
+    if (mouseMode() === "hold") {
+      if (e.button === 0 || e.button === 2) inputModel.resetMouse();
+      return;
+    }
+    // point mode: keep steering, but update boost state
+    updateMouseFromEvent(e);
+  },
+  { passive: true }
+);
 
 socket.on("connect", () => {
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
@@ -549,6 +1001,77 @@ function frame(now) {
   }
 
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  // Touch guide overlay (screen-space)
+  if ((joystick.enabled && (joystick.active || joystick.showGuide)) || (pointControl.enabled && (pointControl.active || joystick.showGuide))) {
+    if (joystick.enabled) {
+      const cx = joystick.active ? joystick.startX : window.innerWidth * 0.25;
+      const cy = joystick.active ? joystick.startY : window.innerHeight * 0.75;
+      const dx = joystick.active ? joystick.x - joystick.startX : 0;
+      const dy = joystick.active ? joystick.y - joystick.startY : 0;
+      const len = Math.hypot(dx, dy);
+      const r = joystick.maxR;
+      const knobR = 18;
+
+      let kx = cx;
+      let ky = cy;
+      if (joystick.active && len > 0.001) {
+        const capped = Math.min(r, len);
+        kx = cx + (dx / len) * capped;
+        ky = cy + (dy / len) * capped;
+      }
+
+      ctx.save();
+      ctx.globalAlpha = joystick.active ? 0.75 : 0.5;
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(79,195,247,0.55)";
+      ctx.beginPath();
+      ctx.arc(kx, ky, knobR, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (joystick.showGuide) {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.font = "13px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(t("touchGuide"), cx, cy - r - 14);
+      }
+
+      ctx.restore();
+    } else if (pointControl.enabled) {
+      const cx = pointControl.active ? pointControl.x : window.innerWidth * 0.75;
+      const cy = pointControl.active ? pointControl.y : window.innerHeight * 0.75;
+      const r = 26;
+
+      ctx.save();
+      ctx.globalAlpha = pointControl.active ? 0.75 : 0.45;
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (joystick.showGuide) {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.font = "13px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(t("touchGuidePoint"), cx, cy - r - 14);
+      }
+
+      ctx.restore();
+    }
+  }
 
   // interpolation factor based on snapshot times
   const s1 = lastSnapshot;

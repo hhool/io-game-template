@@ -1,0 +1,13 @@
+{
+  "controls": {
+    "enableKeyboard": true,
+    "enableMouse": true,
+    "mouseMode": "point",
+    "enableTouch": true,
+    "touchMode": "joystick",
+    "prefer": "touch"
+  },
+  "guide": {
+    "touchGuideOnFirstUse": true
+  }
+}

@@ -20,6 +20,35 @@ npm run dev
 Open:
 - http://localhost:6868/
 
+## Test on phone (LAN)
+If your phone and Mac are on the same Wi‑Fi, you can test the game from the phone browser.
+
+Start a LAN-bound dev server:
+```bash
+cd server
+./scripts/dev_lan.sh start
+```
+
+Then open the printed URL on your phone (example):
+- http://192.168.x.x:6868/
+
+Quick diagnostics:
+```bash
+curl -fsS http://127.0.0.1:6868/healthz
+curl -fsS http://<LAN_IP>:6868/healthz
+./scripts/dev_lan.sh logs
+./scripts/dev_lan.sh status
+```
+
+Stop it:
+```bash
+./scripts/dev_lan.sh stop
+```
+
+Notes:
+- If the phone cannot open the page, check macOS firewall prompts and ensure both devices are on the same network.
+- The LAN helper writes pid/log to `/tmp/1wlgame6868.pid` and `/tmp/1wlgame6868.log`.
+
 ## Run (with Redis adapter)
 ```bash
 cd ..
