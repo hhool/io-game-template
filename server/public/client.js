@@ -260,6 +260,10 @@ const defaultConfig = {
     y: 12,
     opacity: 0.92,
   },
+  bots: {
+    enabled: false,
+    count: 6,
+  },
   guide: {
     touchGuideOnFirstUse: true,
   },
@@ -572,6 +576,35 @@ function applyConfig(nextCfg, opts) {
     localStorage.getItem(STORAGE_TOUCH_GUIDE) !== "1";
 
   applyLang();
+
+  // If we're already in a room, sync bots config to server.
+  syncBotsConfigToServer(false);
+}
+
+function botsCfg() {
+  const b = config?.bots || {};
+  const enabled = Boolean(b.enabled);
+  const count = Number.isFinite(b.count) ? Math.max(0, Math.min(30, Math.floor(b.count))) : defaultConfig.bots.count;
+  return { enabled, count };
+}
+
+let lastBotsSent = { enabled: null, count: null, roomId: null };
+let lastBotsSentAt = 0;
+function syncBotsConfigToServer(force) {
+  if (!socket?.connected) return;
+  if (currentMode !== "play") return;
+  if (!currentRoomId) return;
+
+  const b = botsCfg();
+  const now = Date.now();
+  if (!force) {
+    if (lastBotsSent.roomId === currentRoomId && lastBotsSent.enabled === b.enabled && lastBotsSent.count === b.count) return;
+    if (now - lastBotsSentAt < 350) return;
+  }
+
+  lastBotsSent = { enabled: b.enabled, count: b.count, roomId: currentRoomId };
+  lastBotsSentAt = now;
+  socket.emit("bots:set", { enabled: b.enabled, count: b.count });
 }
 
 function t(key) {
@@ -1066,6 +1099,14 @@ socket.on("room:joined", ({ room, mode }) => {
   roomEl.textContent = currentRoomId ? `room: ${currentRoomId} (${mode})` : "";
   btnLeave.disabled = !currentRoomId;
   statusEl.textContent = "in-room";
+
+  // Apply bots config to this room (dynamic)
+  syncBotsConfigToServer(true);
+});
+
+socket.on("bots:ok", (payload) => {
+  // eslint-disable-next-line no-console
+  console.log("[bots:ok]", payload);
 });
 
 socket.on("room:left", () => {

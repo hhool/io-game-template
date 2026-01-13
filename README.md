@@ -116,6 +116,22 @@ window.gameControls.configure({ minimap: { position: "bottom-left" } })
 window.gameControls.configure({ minimap: { position: "custom", anchor: "bottom-right", x: 20, y: 20, size: 220 } })
 ```
 
+## Bots
+Server-authoritative bots can be enabled per-room and will chase pellets.
+
+Configure defaults in `server/public/config.json` under `bots`:
+- `bots.enabled`: `true | false`
+- `bots.count`: number of bots to maintain (only while there is at least 1 human player in the room)
+
+Runtime toggle example:
+```js
+// Enable 6 bots in your current room
+window.gameControls.configure({ bots: { enabled: true, count: 6 } })
+
+// Disable bots
+window.gameControls.configure({ bots: { enabled: false } })
+```
+
 ## Protocol (implemented)
 
 ### Identity & reconnect

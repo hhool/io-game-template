@@ -116,6 +116,22 @@ window.gameControls.configure({ minimap: { position: "bottom-left" } })
 window.gameControls.configure({ minimap: { position: "custom", anchor: "bottom-right", x: 20, y: 20, size: 220 } })
 ```
 
+## 机器人（Bots）
+支持“服务端权威”的机器人（AI）玩家，可按房间动态开启/关闭，并会自动追逐豆子。
+
+在 `server/public/config.json` 的 `bots` 里配置默认值：
+- `bots.enabled`: `true | false`
+- `bots.count`: 机器人数量（仅当房间里至少有 1 个真人玩家时才会维持机器人；否则会自动清空，避免房间被机器人“占住”）
+
+运行时动态开关示例：
+```js
+// 在当前房间启用 6 个机器人
+window.gameControls.configure({ bots: { enabled: true, count: 6 } })
+
+// 关闭机器人
+window.gameControls.configure({ bots: { enabled: false } })
+```
+
 ## 下一步扩展方向
 - PaperIO：加入“领地填充 + 尾迹碰撞 + 回到领地闭合”
 - Agar：加入“玩家吞噬 + 质量分裂/喷射 + 视野缩放”

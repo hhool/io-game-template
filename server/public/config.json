@@ -17,6 +17,10 @@
     "y": 12,
     "opacity": 0.92
   },
+  "bots": {
+    "enabled": false,
+    "count": 6
+  },
   "guide": {
     "touchGuideOnFirstUse": true
   }

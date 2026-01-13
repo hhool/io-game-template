@@ -182,6 +182,16 @@ io.on('connection', (socket) => {
     socket.emit('room:left', { ok: true });
   });
 
+  // Enable/disable bots for the current room (prototype feature)
+  socket.on('bots:set', (payload = {}) => {
+    if (!session.roomId) return;
+    if (session.mode !== 'play') return;
+    const enabled = Boolean(payload.enabled);
+    const count = Number.isFinite(payload.count) ? payload.count : undefined;
+    const cfg = rooms.setRoomBots(session.roomId, { enabled, count });
+    if (cfg) socket.emit('bots:ok', { roomId: session.roomId, ...cfg });
+  });
+
   socket.on('input', (input) => {
     rooms.setInput(session, input);
   });
@@ -243,6 +253,9 @@ wss.on('connection', (ws, req) => {
 setInterval(() => {
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
+
+    // Keep bots in sync with room settings
+    rooms.ensureBots(room);
 
     // Handle game events (e.g., player death)
     const events = room.game.drainEvents?.() || [];

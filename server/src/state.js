@@ -21,6 +21,9 @@ export function createWorldState({ width, height }) {
   const players = new Map();
   const inputs = new Map();
 
+  const botIds = new Set();
+  const botBrain = new Map();
+
   const events = [];
 
   const pellets = [];
@@ -34,7 +37,7 @@ export function createWorldState({ width, height }) {
     });
   }
 
-  function addPlayer(id, { name } = {}) {
+  function addPlayer(id, { name, isBot } = {}) {
     if (players.has(id)) {
       const existing = players.get(id);
       if (typeof name === 'string' && name.trim()) existing.name = name.trim();
@@ -43,6 +46,7 @@ export function createWorldState({ width, height }) {
     const player = {
       id,
       name: typeof name === 'string' && name.trim() ? name.trim() : '',
+      isBot: Boolean(isBot),
       x: rand(100, width - 100),
       y: rand(100, height - 100),
       vx: 0,
@@ -54,6 +58,16 @@ export function createWorldState({ width, height }) {
     };
     players.set(id, player);
     inputs.set(id, { ax: 0, ay: 0, boost: false });
+
+    if (player.isBot) {
+      botIds.add(id);
+      botBrain.set(id, {
+        targetX: rand(80, width - 80),
+        targetY: rand(80, height - 80),
+        nextThinkAt: 0
+      });
+    }
+
     return { id: player.id, x: player.x, y: player.y, r: player.r, color: player.color };
   }
 
@@ -67,6 +81,8 @@ export function createWorldState({ width, height }) {
   function removePlayer(id) {
     players.delete(id);
     inputs.delete(id);
+    botIds.delete(id);
+    botBrain.delete(id);
   }
 
   function setPlayerInput(id, input) {
@@ -77,9 +93,68 @@ export function createWorldState({ width, height }) {
     inputs.set(id, { ax, ay, boost });
   }
 
+  function hasPlayer(id) {
+    return players.has(id);
+  }
+
+  function botThinkAndSetInput(p) {
+    const brain = botBrain.get(p.id);
+    if (!brain) return;
+
+    const t = Date.now();
+    const safe = 90;
+
+    // Avoid borders
+    if (p.x < safe || p.x > width - safe || p.y < safe || p.y > height - safe) {
+      brain.targetX = width / 2;
+      brain.targetY = height / 2;
+      brain.nextThinkAt = t + 250;
+    }
+
+    // Periodically pick a new target: nearest pellet
+    if (t >= brain.nextThinkAt) {
+      let best = null;
+      let bestD2 = Infinity;
+      for (let i = 0; i < pellets.length; i++) {
+        const pel = pellets[i];
+        const d2 = dist2(p.x, p.y, pel.x, pel.y);
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          best = pel;
+        }
+      }
+      if (best) {
+        brain.targetX = best.x;
+        brain.targetY = best.y;
+      } else {
+        brain.targetX = rand(80, width - 80);
+        brain.targetY = rand(80, height - 80);
+      }
+      brain.nextThinkAt = t + rand(220, 520);
+    }
+
+    const dx = brain.targetX - p.x;
+    const dy = brain.targetY - p.y;
+    const len = Math.hypot(dx, dy);
+    const ax = len > 0.0001 ? dx / len : 0;
+    const ay = len > 0.0001 ? dy / len : 0;
+    const boost = len > 420;
+    inputs.set(p.id, { ax: clamp(ax, -1, 1), ay: clamp(ay, -1, 1), boost });
+  }
+
   function step(dt) {
     // movement constants
     const died = [];
+
+    // AI: update bot inputs first
+    if (botIds.size) {
+      for (const id of botIds) {
+        const p = players.get(id);
+        if (!p) continue;
+        botThinkAndSetInput(p);
+      }
+    }
+
     for (const [id, p] of players) {
       const input = inputs.get(id) ?? { ax: 0, ay: 0, boost: false };
 
@@ -152,6 +227,7 @@ export function createWorldState({ width, height }) {
       players: Array.from(players.values(), (p) => ({
         id: p.id,
         name: p.name || '',
+        isBot: Boolean(p.isBot),
         x: p.x,
         y: p.y,
         r: p.r,
@@ -171,6 +247,7 @@ export function createWorldState({ width, height }) {
     setPlayerName,
     removePlayer,
     setPlayerInput,
+    hasPlayer,
     step,
     drainEvents,
     getSnapshot,

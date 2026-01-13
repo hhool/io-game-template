@@ -107,9 +107,11 @@ export class RoomManager {
       id,
       game,
       players: new Set(),
+      bots: new Set(),
       spectators: new Set(),
       updatedAt: now(),
-      leaderboard: []
+      leaderboard: [],
+      botConfig: { enabled: false, count: 0 }
     };
 
     // start per-room loops
@@ -120,6 +122,65 @@ export class RoomManager {
 
     this.rooms.set(id, room);
     return room;
+  }
+
+  setRoomBots(roomId, { enabled, count } = {}) {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    room.botConfig.enabled = Boolean(enabled);
+    const n = Number.isFinite(count) ? Math.max(0, Math.min(30, Math.floor(count))) : room.botConfig.count;
+    room.botConfig.count = n;
+    room.updatedAt = now();
+    return { enabled: room.botConfig.enabled, count: room.botConfig.count };
+  }
+
+  ensureBots(room) {
+    if (!room) return;
+
+    // Clean up dead bots from tracking set
+    for (const id of Array.from(room.bots)) {
+      if (!room.game.hasPlayer?.(id)) room.bots.delete(id);
+    }
+
+    // If no human players, keep room clean (bots shouldn't keep it alive)
+    if (room.players.size === 0) {
+      if (room.bots.size) {
+        for (const id of Array.from(room.bots)) {
+          room.game.removePlayer?.(id);
+        }
+        room.bots.clear();
+      }
+      return;
+    }
+
+    if (!room.botConfig?.enabled || room.botConfig.count <= 0) {
+      if (room.bots.size) {
+        for (const id of Array.from(room.bots)) {
+          room.game.removePlayer?.(id);
+        }
+        room.bots.clear();
+        room.updatedAt = now();
+      }
+      return;
+    }
+
+    // Add/remove to target count
+    while (room.bots.size < room.botConfig.count) {
+      const idx = room.bots.size + 1;
+      const botId = `bot_${room.id}_${idx}_${crypto.randomBytes(2).toString('hex')}`;
+      const name = `BOT${idx}`;
+      room.game.addPlayer(botId, { name, isBot: true });
+      room.bots.add(botId);
+      room.updatedAt = now();
+    }
+
+    while (room.bots.size > room.botConfig.count) {
+      const id = room.bots.values().next().value;
+      if (!id) break;
+      room.game.removePlayer?.(id);
+      room.bots.delete(id);
+      room.updatedAt = now();
+    }
   }
 
   joinRoomAsPlayer(session, roomId) {
@@ -219,6 +280,13 @@ export class RoomManager {
     for (const [id, room] of this.rooms) {
       if (room.players.size > 0 || room.spectators.size > 0) continue;
       if (t - room.updatedAt > this.emptyRoomTtlMs) {
+        // ensure bots are removed before stopping/deleting
+        if (room.bots?.size) {
+          for (const bid of Array.from(room.bots)) {
+            room.game.removePlayer?.(bid);
+          }
+          room.bots.clear();
+        }
         room.game.stop?.();
         this.rooms.delete(id);
       }
