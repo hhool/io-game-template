@@ -248,6 +248,17 @@ const defaultConfig = {
     touchMode: isTouchCapable ? "joystick" : "off", // joystick | point | off
     prefer: isTouchCapable ? "touch" : "mouse", // touch | mouse | keyboard
   },
+  minimap: {
+    enabled: true,
+    position: "top-right", // top-left | top-right | bottom-left | bottom-right | custom
+    size: 160, // square size in px (number) OR set width/height
+    width: null,
+    height: null,
+    margin: 12,
+    x: 12, // used when position === 'custom' (from top-left)
+    y: 12,
+    opacity: 0.92,
+  },
   guide: {
     touchGuideOnFirstUse: true,
   },
@@ -354,6 +365,138 @@ const pointControl = {
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
+}
+
+function minimapCfg() {
+  const m = config?.minimap || {};
+  const size = typeof m.size === "number" ? m.size : defaultConfig.minimap.size;
+  const width = typeof m.width === "number" ? m.width : size;
+  const height = typeof m.height === "number" ? m.height : size;
+  return {
+    enabled: m.enabled !== false,
+    position: typeof m.position === "string" ? m.position : defaultConfig.minimap.position,
+    width: Math.max(60, Math.min(420, width)),
+    height: Math.max(60, Math.min(420, height)),
+    margin: typeof m.margin === "number" ? m.margin : defaultConfig.minimap.margin,
+    x: typeof m.x === "number" ? m.x : defaultConfig.minimap.x,
+    y: typeof m.y === "number" ? m.y : defaultConfig.minimap.y,
+    opacity: typeof m.opacity === "number" ? m.opacity : defaultConfig.minimap.opacity,
+  };
+}
+
+function minimapRect() {
+  const m = minimapCfg();
+  const w = m.width;
+  const h = m.height;
+  const margin = m.margin;
+  const posRaw = (m.position || "top-right").toLowerCase();
+  const pos =
+    posRaw === "tl" || posRaw === "top-left" || posRaw === "left-top"
+      ? "top-left"
+      : posRaw === "tr" || posRaw === "top-right" || posRaw === "right-top"
+        ? "top-right"
+        : posRaw === "bl" || posRaw === "bottom-left" || posRaw === "left-bottom"
+          ? "bottom-left"
+          : posRaw === "br" || posRaw === "bottom-right" || posRaw === "right-bottom"
+            ? "bottom-right"
+            : "custom";
+
+  let x = margin;
+  let y = margin;
+  if (pos === "top-right") x = window.innerWidth - margin - w;
+  if (pos === "bottom-left") y = window.innerHeight - margin - h;
+  if (pos === "bottom-right") {
+    x = window.innerWidth - margin - w;
+    y = window.innerHeight - margin - h;
+  }
+  if (pos === "custom") {
+    x = m.x;
+    y = m.y;
+  }
+
+  // Clamp to screen
+  x = clamp(x, 0, Math.max(0, window.innerWidth - w));
+  y = clamp(y, 0, Math.max(0, window.innerHeight - h));
+  return { x, y, w, h, opacity: m.opacity };
+}
+
+function drawMinimap(snap, camX, camY) {
+  const m = minimapCfg();
+  if (!m.enabled) return;
+  if (!snap) return;
+
+  const rect = minimapRect();
+  const pad = 6;
+  const innerX = rect.x + pad;
+  const innerY = rect.y + pad;
+  const innerW = rect.w - pad * 2;
+  const innerH = rect.h - pad * 2;
+  if (innerW <= 0 || innerH <= 0) return;
+
+  ctx.save();
+  ctx.globalAlpha = clamp(rect.opacity, 0.2, 1);
+
+  // Panel
+  const r = 10;
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(rect.x + r, rect.y);
+  ctx.arcTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h, r);
+  ctx.arcTo(rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h, r);
+  ctx.arcTo(rect.x, rect.y + rect.h, rect.x, rect.y, r);
+  ctx.arcTo(rect.x, rect.y, rect.x + rect.w, rect.y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // World bounds (scaled to fit inner rect)
+  const sx = innerW / (world.width || 1);
+  const sy = innerH / (world.height || 1);
+
+  const mapX = (wx) => innerX + wx * sx;
+  const mapY = (wy) => innerY + wy * sy;
+
+  ctx.globalAlpha = clamp(rect.opacity, 0.2, 1);
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(innerX, innerY, innerW, innerH);
+
+  // Pellets (light)
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  for (const pel of snap.pellets || []) {
+    const px = mapX(pel.x);
+    const py = mapY(pel.y);
+    // 1px dot
+    ctx.fillRect(px, py, 1.2, 1.2);
+  }
+
+  // Players
+  for (const p of snap.players || []) {
+    const px = mapX(p.x);
+    const py = mapY(p.y);
+    const isMe = p.id === myId;
+    ctx.fillStyle = isMe ? "rgba(255,255,255,0.95)" : p.color || "rgba(255,255,255,0.65)";
+    ctx.beginPath();
+    ctx.arc(px, py, isMe ? 2.6 : 2.0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Viewport rectangle (camera)
+  const vx0 = clamp(camX, 0, world.width);
+  const vy0 = clamp(camY, 0, world.height);
+  const vx1 = clamp(camX + window.innerWidth, 0, world.width);
+  const vy1 = clamp(camY + window.innerHeight, 0, world.height);
+  const rx = mapX(vx0);
+  const ry = mapY(vy0);
+  const rw = (vx1 - vx0) * sx;
+  const rh = (vy1 - vy0) * sy;
+  ctx.strokeStyle = "rgba(79,195,247,0.70)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(rx, ry, rw, rh);
+
+  ctx.restore();
 }
 
 function normalizeStick(dx, dy) {
@@ -1150,6 +1293,9 @@ function frame(now) {
   }
 
   ctx.restore();
+
+  // Screen-space overlays
+  drawMinimap(s1, camX, camY);
 
   requestAnimationFrame(frame);
 }
