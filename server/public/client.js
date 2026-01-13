@@ -41,9 +41,26 @@ resize();
 const STORAGE_TOKEN = "1wlgame_token";
 const STORAGE_PROFILE = "1wlgame_profile_v1";
 
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadProfile() {
   try {
-    const raw = localStorage.getItem(STORAGE_PROFILE);
+    const raw = storageGet(STORAGE_PROFILE);
     const parsed = raw ? JSON.parse(raw) : {};
     return {
       nick: typeof parsed.nick === "string" ? parsed.nick : "",
@@ -57,7 +74,7 @@ function loadProfile() {
 }
 
 function saveProfile() {
-  localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+  storageSet(STORAGE_PROFILE, JSON.stringify(profile));
 }
 
 function sanitizeNick(nick) {
@@ -224,13 +241,14 @@ const I18N = {
   },
 };
 
-let token = localStorage.getItem(STORAGE_TOKEN);
+let token = storageGet(STORAGE_TOKEN);
 let profile = loadProfile();
 let lang = I18N[profile.lang] ? profile.lang : "en";
 let nick = sanitizeNick(profile.nick);
 let profileConfirmed = false;
 let autoQuickRequested = false;
 let joinInFlight = false;
+let socket = null;
 
 // --- Input model (keyboard + touch) ---
 const STORAGE_TOUCH_GUIDE = "1wlgame_touch_guide_seen_v1";
@@ -284,7 +302,7 @@ function deepMerge(a, b) {
 
 function loadLocalConfig() {
   try {
-    const raw = localStorage.getItem(STORAGE_CFG);
+    const raw = storageGet(STORAGE_CFG);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -293,7 +311,7 @@ function loadLocalConfig() {
 
 function saveLocalConfig(overrides) {
   try {
-    localStorage.setItem(STORAGE_CFG, JSON.stringify(overrides || {}));
+    storageSet(STORAGE_CFG, JSON.stringify(overrides || {}));
   } catch {
     // ignore
   }
@@ -357,7 +375,7 @@ const joystick = {
   showGuide:
     isTouchCapable &&
     config?.guide?.touchGuideOnFirstUse !== false &&
-    localStorage.getItem(STORAGE_TOUCH_GUIDE) !== "1",
+    storageGet(STORAGE_TOUCH_GUIDE) !== "1",
 };
 
 const pointControl = {
@@ -454,6 +472,8 @@ function minimapRect() {
 function drawMinimap(snap, camX, camY) {
   const m = minimapCfg();
   if (!m.enabled) return;
+  // Do not render minimap on the login screen.
+  if (!loginEl.classList.contains("hidden")) return;
   if (!snap) return;
 
   const rect = minimapRect();
@@ -549,7 +569,7 @@ function touchBoostFromEvent(e) {
 function setTouchGuideSeen() {
   if (!joystick.showGuide) return;
   joystick.showGuide = false;
-  localStorage.setItem(STORAGE_TOUCH_GUIDE, "1");
+  storageSet(STORAGE_TOUCH_GUIDE, "1");
 }
 
 function applyConfig(nextCfg, opts) {
@@ -573,7 +593,7 @@ function applyConfig(nextCfg, opts) {
     inputModel.useTouch &&
     (joystick.enabled || pointControl.enabled) &&
     config?.guide?.touchGuideOnFirstUse !== false &&
-    localStorage.getItem(STORAGE_TOUCH_GUIDE) !== "1";
+    storageGet(STORAGE_TOUCH_GUIDE) !== "1";
 
   applyLang();
 
@@ -814,7 +834,7 @@ const backendUrl =
     ? window.location.origin
     : `http://${window.location.hostname || "localhost"}:6868`);
 
-const socket = io(backendUrl, {
+socket = io(backendUrl, {
   transports: ["polling", "websocket"],
   auth: { token },
 });
@@ -1062,7 +1082,7 @@ socket.on("connect_error", (err) => {
 socket.on("auth", (payload) => {
   if (payload?.token && payload.token !== token) {
     token = payload.token;
-    localStorage.setItem(STORAGE_TOKEN, token);
+    storageSet(STORAGE_TOKEN, token);
   }
   if (payload?.nick && !nick) {
     nick = sanitizeNick(payload.nick);
