@@ -132,6 +132,9 @@ window.gameControls.configure({ bots: { enabled: true, count: 6 } })
 window.gameControls.configure({ bots: { enabled: false } })
 ```
 
+URL 传参快速测试（不持久化）：
+- `/?bots=1&botCount=6`
+
 ## 下一步扩展方向
 - PaperIO：加入“领地填充 + 尾迹碰撞 + 回到领地闭合”
 - Agar：加入“玩家吞噬 + 质量分裂/喷射 + 视野缩放”

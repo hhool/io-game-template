@@ -665,8 +665,38 @@ window.gameControls = {
   getInput: () => ({ ...inputModel.get() }),
 };
 
+function getUrlConfigOverrides() {
+  try {
+    const q = new URLSearchParams(window.location.search || "");
+    const botsRaw = q.get("bots");
+    const botCountRaw = q.get("botCount") ?? q.get("botsCount") ?? q.get("bots_count");
+
+    const out = {};
+
+    if (botsRaw != null) {
+      const v = String(botsRaw).toLowerCase();
+      const enabled = v === "1" || v === "true" || v === "yes" || v === "on";
+      out.bots = { ...(out.bots || {}), enabled };
+    }
+
+    if (botCountRaw != null) {
+      const n = Number(botCountRaw);
+      if (Number.isFinite(n)) {
+        out.bots = { ...(out.bots || {}), count: Math.max(0, Math.min(30, Math.floor(n))) };
+      }
+    }
+
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 // Apply defaults + local overrides immediately
 applyConfig(null, { persist: false });
+
+// Optional URL overrides for quick testing, e.g. /?bots=1&botCount=6
+const urlOverrides = getUrlConfigOverrides();
 
 // Load config.json (optional)
 fetch("/config.json", { cache: "no-store" })
@@ -676,6 +706,9 @@ fetch("/config.json", { cache: "no-store" })
   })
   .catch(() => {
     // ignore
+  })
+  .finally(() => {
+    if (urlOverrides) applyConfig(urlOverrides, { persist: false });
   });
 
 function renderStats() {

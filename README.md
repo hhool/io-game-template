@@ -132,6 +132,9 @@ window.gameControls.configure({ bots: { enabled: true, count: 6 } })
 window.gameControls.configure({ bots: { enabled: false } })
 ```
 
+URL param quick test (no persistence):
+- `/?bots=1&botCount=6`
+
 ## Protocol (implemented)
 
 ### Identity & reconnect
