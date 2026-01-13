@@ -71,6 +71,11 @@ const rooms = new RoomManager({
   sessionTtlMs: 5 * 60_000
 });
 
+function sanitizeNick(nick) {
+  if (typeof nick !== 'string') return '';
+  return nick.replace(/[\r\n\t]/g, ' ').trim().slice(0, 16);
+}
+
 // Maintenance loop
 setInterval(() => rooms.tickMaintenance(), 5_000);
 
@@ -81,12 +86,24 @@ io.on('connection', (socket) => {
   rooms.attachSocketToSession(session, socket.id);
 
   // Tell client its token (first connect)
-  socket.emit('auth', { token: session.token, playerId: session.playerId });
+  socket.emit('auth', { token: session.token, playerId: session.playerId, nick: session.nick });
 
   socket.emit('hello', {
     playerId: session.playerId,
+    nick: session.nick,
     serverTs: Date.now(),
     rooms: rooms.listRooms({ limit: 20 })
+  });
+
+  socket.on('profile:set', (payload = {}) => {
+    const nick = sanitizeNick(payload.nick);
+    rooms.setNick(session, nick);
+    // keep the in-world name in sync if already playing
+    if (session.roomId && session.mode === 'play') {
+      const room = rooms.ensureRoom(session.roomId);
+      room.game.setPlayerName?.(session.playerId, session.nick);
+    }
+    socket.emit('profile:ok', { nick: session.nick });
   });
 
   // If session had a room, re-join it (spectate or play)
@@ -95,7 +112,7 @@ io.on('connection', (socket) => {
     const room = rooms.ensureRoom(session.roomId);
     if (session.mode === 'play') {
       room.players.add(session.playerId);
-      room.game.addPlayer(session.playerId);
+      room.game.addPlayer(session.playerId, { name: session.nick });
     } else {
       room.spectators.add(session.playerId);
     }
@@ -105,6 +122,12 @@ io.on('connection', (socket) => {
   socket.on('mm:join', (payload = {}) => {
     console.log('[mm:join]', { socketId: socket.id, playerId: session.playerId, payload });
     const mode = payload.mode === 'spectate' ? 'spectate' : 'play';
+
+    if (mode === 'play' && !session.nick) {
+      socket.emit('login:required', { message: 'nickname required' });
+      return;
+    }
+
     const room = mode === 'play' ? rooms.quickMatch(session) : rooms.joinRoomAsSpectator(session, rooms.ensureRoom().id);
 
     socket.rooms.forEach((r) => {
@@ -122,6 +145,12 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'roomId required' });
       return;
     }
+
+    if (mode === 'play' && !session.nick) {
+      socket.emit('login:required', { message: 'nickname required' });
+      return;
+    }
+
     const room = mode === 'play' ? rooms.joinRoomAsPlayer(session, targetRoomId) : rooms.joinRoomAsSpectator(session, targetRoomId);
 
     socket.rooms.forEach((r) => {
@@ -199,6 +228,32 @@ wss.on('connection', (ws, req) => {
 setInterval(() => {
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
+
+    // Handle game events (e.g., player death)
+    const events = room.game.drainEvents?.() || [];
+    for (const ev of events) {
+      if (ev?.type !== 'dead' || !ev.id) continue;
+      const session = rooms.getSessionByPlayerId(ev.id);
+      if (!session) continue;
+
+      // Remove membership and clear room on the session
+      const oldRoomId = session.roomId;
+      rooms.leaveCurrentRoom(session);
+
+      // Notify the owning socket if still connected
+      const sid = session.connectedSocketId;
+      if (sid) {
+        const s = io.sockets.sockets.get(sid);
+        try {
+          if (oldRoomId) s?.leave(oldRoomId);
+          s?.emit('game:over', { score: ev.score ?? 0, reason: ev.reason || 'dead' });
+          s?.emit('room:left', { ok: true });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     const snap = rooms.getRoomSnapshot(room.id);
     if (!snap) continue;
     const leaderboard = rooms.computeLeaderboard(room);

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
@@ -7,8 +7,46 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div class="hud">
-      <div class="title">1wlgame IO Prototype</div>
+    <div id="login" class="screen">
+      <div class="card">
+        <div class="brand" id="loginTitle">1wlgame</div>
+
+        <div class="row">
+          <label for="lang" id="labelLang">Language</label>
+          <select id="lang">
+            <option value="en">English</option>
+            <option value="ru">Русский</option>
+            <option value="fr">Français</option>
+            <option value="zh">中文</option>
+            <option value="de">Deutsch</option>
+            <option value="ar">العربية</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="nick" id="labelNick">Nickname</label>
+          <input id="nick" type="text" maxlength="16" autocomplete="nickname" />
+        </div>
+
+        <button id="btnLogin" class="primary">Enter</button>
+        <div id="loginMsg" class="msg"></div>
+
+        <div class="stats">
+          <div class="statLine" id="bestLine"></div>
+          <div class="subTitle" id="recentTitle">Recent results</div>
+          <ol id="history"></ol>
+        </div>
+
+        <div class="donate">
+          <a id="donateCoffee" href="https://www.buymeacoffee.com/<your_id>" target="_blank" rel="noreferrer">Buy me a coffee</a>
+          <span class="sep">·</span>
+          <a id="donateLink" href="<your_donation_url>" target="_blank" rel="noreferrer">Donate</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud" id="hud">
+      <div class="title" id="hudTitle">1wlgame IO Prototype</div>
       <div class="meta">
         <span id="status">connecting…</span>
         <span id="me"></span>
@@ -16,13 +54,13 @@
         <span id="fps"></span>
       </div>
       <div class="actions">
-        <button id="btnQuick">快速匹配</button>
-        <button id="btnSpectate">观战</button>
-        <button id="btnLeave" disabled>离开房间</button>
+        <button id="btnQuick">Quick Match</button>
+        <button id="btnSpectate">Spectate</button>
+        <button id="btnLeave" disabled>Leave</button>
       </div>
-      <div class="hint">WASD/方向键移动，Shift 加速（示例）。</div>
+      <div class="hint" id="hint">WASD/Arrow keys to move, Shift to boost (demo).</div>
       <div class="board">
-        <div class="boardTitle">排行榜</div>
+        <div class="boardTitle" id="lbTitle">Leaderboard</div>
         <ol id="lb"></ol>
       </div>
     </div>

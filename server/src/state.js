@@ -21,6 +21,8 @@ export function createWorldState({ width, height }) {
   const players = new Map();
   const inputs = new Map();
 
+  const events = [];
+
   const pellets = [];
   const pelletCount = 260;
   for (let i = 0; i < pelletCount; i++) {
@@ -32,13 +34,15 @@ export function createWorldState({ width, height }) {
     });
   }
 
-  function addPlayer(id) {
+  function addPlayer(id, { name } = {}) {
     if (players.has(id)) {
       const existing = players.get(id);
+      if (typeof name === 'string' && name.trim()) existing.name = name.trim();
       return { id: existing.id, x: existing.x, y: existing.y, r: existing.r, color: existing.color };
     }
     const player = {
       id,
+      name: typeof name === 'string' && name.trim() ? name.trim() : '',
       x: rand(100, width - 100),
       y: rand(100, height - 100),
       vx: 0,
@@ -51,6 +55,13 @@ export function createWorldState({ width, height }) {
     players.set(id, player);
     inputs.set(id, { ax: 0, ay: 0, boost: false });
     return { id: player.id, x: player.x, y: player.y, r: player.r, color: player.color };
+  }
+
+  function setPlayerName(id, name) {
+    const p = players.get(id);
+    if (!p) return;
+    if (typeof name !== 'string') return;
+    p.name = name.trim().slice(0, 16);
   }
 
   function removePlayer(id) {
@@ -68,6 +79,7 @@ export function createWorldState({ width, height }) {
 
   function step(dt) {
     // movement constants
+    const died = [];
     for (const [id, p] of players) {
       const input = inputs.get(id) ?? { ax: 0, ay: 0, boost: false };
 
@@ -92,6 +104,18 @@ export function createWorldState({ width, height }) {
       p.y = clamp(p.y + p.vy * dt, p.r, height - p.r);
       p.ts = Date.now();
 
+      // Simple fail condition: touching the world boundary => game over.
+      // This gives us a deterministic "lose" signal for the prototype.
+      const onBorder =
+        p.x <= p.r + 0.001 ||
+        p.x >= width - p.r - 0.001 ||
+        p.y <= p.r + 0.001 ||
+        p.y >= height - p.r - 0.001;
+      if (onBorder) {
+        died.push({ id, score: p.score });
+        continue;
+      }
+
       // pellet collection
       const eatR = p.r + 6;
       const eatR2 = eatR * eatR;
@@ -109,6 +133,17 @@ export function createWorldState({ width, height }) {
         }
       }
     }
+
+    if (died.length) {
+      for (const d of died) {
+        events.push({ type: 'dead', id: d.id, score: d.score, reason: 'border' });
+        removePlayer(d.id);
+      }
+    }
+  }
+
+  function drainEvents() {
+    return events.splice(0, events.length);
   }
 
   function getSnapshot() {
@@ -116,6 +151,7 @@ export function createWorldState({ width, height }) {
       ts: Date.now(),
       players: Array.from(players.values(), (p) => ({
         id: p.id,
+        name: p.name || '',
         x: p.x,
         y: p.y,
         r: p.r,
@@ -132,9 +168,11 @@ export function createWorldState({ width, height }) {
 
   return {
     addPlayer,
+    setPlayerName,
     removePlayer,
     setPlayerInput,
     step,
+    drainEvents,
     getSnapshot,
     getWorldInfo
   };

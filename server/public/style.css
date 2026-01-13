@@ -17,6 +17,69 @@ canvas{display:block;width:100vw;height:100vh}
   backdrop-filter: blur(8px);
   padding:10px 12px;border-radius:10px;max-width:320px
 }
+
+.hidden{display:none !important}
+
+.screen{
+  position:fixed;inset:0;z-index:20;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.40);
+}
+
+.card{
+  width:min(520px, calc(100vw - 24px));
+  background:rgba(15,18,20,0.88);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:16px;
+  padding:16px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.45);
+  backdrop-filter: blur(10px);
+}
+
+.brand{font-weight:900;letter-spacing:0.3px;font-size:18px;margin-bottom:10px}
+
+.row{display:flex;gap:10px;align-items:center;margin:10px 0}
+.row label{width:120px;color:var(--muted);font-size:12px;font-weight:800}
+.row input,.row select{
+  flex:1;
+  background:rgba(255,255,255,0.06);
+  color:var(--text);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:12px;
+  padding:10px 12px;
+  outline:none;
+}
+.row input:focus,.row select:focus{border-color:rgba(79,195,247,0.55)}
+
+button.primary{
+  width:100%;
+  margin-top:6px;
+  background:rgba(79,195,247,0.22);
+  color:var(--text);
+  border:1px solid rgba(79,195,247,0.40);
+  border-radius:12px;
+  padding:10px 12px;
+  font-weight:900;
+  cursor:pointer;
+}
+button.primary:hover{border-color:rgba(79,195,247,0.70)}
+
+.msg{min-height:18px;margin-top:8px;color:var(--muted);font-size:12px}
+
+.stats{margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px}
+.statLine{font-size:12px;color:var(--text);opacity:0.9}
+.subTitle{font-size:12px;color:var(--muted);font-weight:900;letter-spacing:0.2px;margin-top:10px}
+#history{margin:8px 0 0 18px;padding:0;max-height:160px;overflow:auto}
+#history li{font-size:12px;color:var(--text);opacity:0.9;margin:4px 0}
+
+.donate{margin-top:12px;color:var(--muted);font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.donate a{color:var(--accent);text-decoration:none;font-weight:800}
+.donate a:hover{text-decoration:underline}
+.donate .sep{opacity:0.5}
+
+html[dir="rtl"] .row{flex-direction:row-reverse}
+html[dir="rtl"] .row label{width:120px;text-align:right}
+html[dir="rtl"] #history, html[dir="rtl"] .board ol{margin-left:0;margin-right:18px}
 .title{font-weight:800;letter-spacing:0.3px}
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;color:var(--muted);font-size:12px}
 .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}

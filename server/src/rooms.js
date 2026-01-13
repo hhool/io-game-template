@@ -22,7 +22,7 @@ export class RoomManager {
     /** @type {Map<string, {id:string, game:any, players:Set<string>, spectators:Set<string>, updatedAt:number, leaderboard:any[]}>} */
     this.rooms = new Map();
 
-    /** token -> { token, playerId, roomId, mode:'play'|'spectate', lastSeen, connectedSocketId|null } */
+    /** token -> { token, playerId, nick, roomId, mode:'play'|'spectate', lastSeen, connectedSocketId|null } */
     this.sessions = new Map();
 
     /** playerId -> token */
@@ -41,6 +41,7 @@ export class RoomManager {
     const session = {
       token: newToken,
       playerId,
+      nick: '',
       roomId: null,
       mode: 'play',
       lastSeen: now(),
@@ -49,6 +50,19 @@ export class RoomManager {
     this.sessions.set(newToken, session);
     this.playerToken.set(playerId, newToken);
     return session;
+  }
+
+  setNick(session, nick) {
+    if (!session) return;
+    if (typeof nick !== 'string') return;
+    session.nick = nick.trim().slice(0, 16);
+    session.lastSeen = now();
+  }
+
+  getSessionByPlayerId(playerId) {
+    const token = this.playerToken.get(playerId);
+    if (!token) return null;
+    return this.sessions.get(token) || null;
   }
 
   attachSocketToSession(session, socketId) {
@@ -120,7 +134,7 @@ export class RoomManager {
     room.updatedAt = now();
 
     // create player if not exist
-    room.game.addPlayer(session.playerId);
+    room.game.addPlayer(session.playerId, { name: session.nick });
 
     return room;
   }
@@ -189,7 +203,7 @@ export class RoomManager {
     const top = [...snap.players]
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, 10)
-      .map((p) => ({ id: p.id, score: p.score, color: p.color, r: p.r }));
+      .map((p) => ({ id: p.id, name: p.name || '', score: p.score, color: p.color, r: p.r }));
     room.leaderboard = top;
     return top;
   }

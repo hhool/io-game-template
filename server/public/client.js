@@ -1,6 +1,9 @@
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
+const hudEl = document.getElementById("hud");
+const loginEl = document.getElementById("login");
+
 const statusEl = document.getElementById("status");
 const meEl = document.getElementById("me");
 const roomEl = document.getElementById("room");
@@ -11,6 +14,21 @@ const btnQuick = document.getElementById("btnQuick");
 const btnSpectate = document.getElementById("btnSpectate");
 const btnLeave = document.getElementById("btnLeave");
 
+const langSel = document.getElementById("lang");
+const nickInput = document.getElementById("nick");
+const btnLogin = document.getElementById("btnLogin");
+const loginMsg = document.getElementById("loginMsg");
+const bestLineEl = document.getElementById("bestLine");
+const historyEl = document.getElementById("history");
+
+const loginTitleEl = document.getElementById("loginTitle");
+const labelLangEl = document.getElementById("labelLang");
+const labelNickEl = document.getElementById("labelNick");
+const recentTitleEl = document.getElementById("recentTitle");
+const hudTitleEl = document.getElementById("hudTitle");
+const lbTitleEl = document.getElementById("lbTitle");
+const hintEl = document.getElementById("hint");
+
 function resize() {
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   canvas.width = Math.floor(window.innerWidth * dpr);
@@ -20,8 +38,288 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-const STORAGE_KEY = "1wlgame_token";
-let token = localStorage.getItem(STORAGE_KEY);
+const STORAGE_TOKEN = "1wlgame_token";
+const STORAGE_PROFILE = "1wlgame_profile_v1";
+
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(STORAGE_PROFILE);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      nick: typeof parsed.nick === "string" ? parsed.nick : "",
+      bestScore: Number.isFinite(parsed.bestScore) ? parsed.bestScore : 0,
+      history: Array.isArray(parsed.history) ? parsed.history : [],
+      lang: typeof parsed.lang === "string" ? parsed.lang : "en",
+    };
+  } catch {
+    return { nick: "", bestScore: 0, history: [], lang: "en" };
+  }
+}
+
+function saveProfile() {
+  localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+}
+
+function sanitizeNick(nick) {
+  if (typeof nick !== "string") return "";
+  return nick.replace(/[\r\n\t]/g, " ").trim().slice(0, 16);
+}
+
+const I18N = {
+  en: {
+    loginTitle: "1wlgame",
+    labelLang: "Language",
+    labelNick: "Nickname",
+    nickPlaceholder: "Enter your nickname",
+    enter: "Enter",
+    best: "Best score",
+    recent: "Recent results (max 5)",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "Quick Match",
+    spectate: "Spectate",
+    leave: "Leave",
+    hint: "WASD/Arrow keys to move, Shift to boost (demo).",
+    leaderboard: "Leaderboard",
+    connecting: "connecting…",
+    connected: "connected",
+    disconnected: "disconnected",
+    notConnected: "not connected",
+    needNick: "Please enter a nickname first.",
+    gameOver: (score) => `Game Over. Score: ${score}`,
+  },
+  ru: {
+    loginTitle: "1wlgame",
+    labelLang: "Язык",
+    labelNick: "Ник",
+    nickPlaceholder: "Введите ник",
+    enter: "Войти",
+    best: "Лучший счёт",
+    recent: "Последние результаты (до 5)",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "Быстрый матч",
+    spectate: "Наблюдать",
+    leave: "Выйти",
+    hint: "WASD/Стрелки — движение, Shift — ускорение.",
+    leaderboard: "Таблица лидеров",
+    connecting: "подключение…",
+    connected: "подключено",
+    disconnected: "отключено",
+    notConnected: "нет соединения",
+    needNick: "Сначала введите ник.",
+    gameOver: (score) => `Игра окончена. Счёт: ${score}`,
+  },
+  fr: {
+    loginTitle: "1wlgame",
+    labelLang: "Langue",
+    labelNick: "Pseudo",
+    nickPlaceholder: "Entrez votre pseudo",
+    enter: "Entrer",
+    best: "Meilleur score",
+    recent: "Résultats récents (max 5)",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "Match rapide",
+    spectate: "Observer",
+    leave: "Quitter",
+    hint: "WASD/Flèches pour bouger, Shift pour booster.",
+    leaderboard: "Classement",
+    connecting: "connexion…",
+    connected: "connecté",
+    disconnected: "déconnecté",
+    notConnected: "pas connecté",
+    needNick: "Veuillez d'abord saisir un pseudo.",
+    gameOver: (score) => `Partie terminée. Score : ${score}`,
+  },
+  zh: {
+    loginTitle: "1wlgame",
+    labelLang: "语言",
+    labelNick: "昵称",
+    nickPlaceholder: "请输入昵称",
+    enter: "进入",
+    best: "最佳成绩",
+    recent: "最近战绩（最多 5 条）",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "快速匹配",
+    spectate: "观战",
+    leave: "离开",
+    hint: "WASD/方向键移动，Shift 加速（示例）。",
+    leaderboard: "排行榜",
+    connecting: "连接中…",
+    connected: "已连接",
+    disconnected: "已断开",
+    notConnected: "未连接",
+    needNick: "请先输入昵称。",
+    gameOver: (score) => `游戏结束，得分：${score}`,
+  },
+  de: {
+    loginTitle: "1wlgame",
+    labelLang: "Sprache",
+    labelNick: "Nickname",
+    nickPlaceholder: "Nickname eingeben",
+    enter: "Start",
+    best: "Bester Score",
+    recent: "Letzte Ergebnisse (max. 5)",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "Schnelles Match",
+    spectate: "Zuschauen",
+    leave: "Verlassen",
+    hint: "WASD/Pfeile zum Bewegen, Shift für Boost.",
+    leaderboard: "Rangliste",
+    connecting: "verbinde…",
+    connected: "verbunden",
+    disconnected: "getrennt",
+    notConnected: "nicht verbunden",
+    needNick: "Bitte zuerst einen Nickname eingeben.",
+    gameOver: (score) => `Game Over. Score: ${score}`,
+  },
+  ar: {
+    loginTitle: "1wlgame",
+    labelLang: "اللغة",
+    labelNick: "الاسم",
+    nickPlaceholder: "أدخل الاسم",
+    enter: "دخول",
+    best: "أفضل نتيجة",
+    recent: "آخر النتائج (حد أقصى 5)",
+    hudTitle: "1wlgame IO Prototype",
+    quick: "مباراة سريعة",
+    spectate: "مشاهدة",
+    leave: "مغادرة",
+    hint: "WASD/الأسهم للحركة، Shift للتسريع.",
+    leaderboard: "لوحة الصدارة",
+    connecting: "جارٍ الاتصال…",
+    connected: "متصل",
+    disconnected: "غير متصل",
+    notConnected: "غير متصل",
+    needNick: "الرجاء إدخال الاسم أولاً.",
+    gameOver: (score) => `انتهت اللعبة. النتيجة: ${score}`,
+  },
+};
+
+let token = localStorage.getItem(STORAGE_TOKEN);
+let profile = loadProfile();
+let lang = I18N[profile.lang] ? profile.lang : "en";
+let nick = sanitizeNick(profile.nick);
+let profileConfirmed = false;
+let autoQuickRequested = false;
+let joinInFlight = false;
+
+function t(key) {
+  const dict = I18N[lang] || I18N.en;
+  return dict[key] ?? I18N.en[key] ?? key;
+}
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  loginTitleEl.textContent = t("loginTitle");
+  labelLangEl.textContent = t("labelLang");
+  labelNickEl.textContent = t("labelNick");
+  nickInput.placeholder = t("nickPlaceholder");
+  btnLogin.textContent = t("enter");
+
+  hudTitleEl.textContent = t("hudTitle");
+  btnQuick.textContent = t("quick");
+  btnSpectate.textContent = t("spectate");
+  btnLeave.textContent = t("leave");
+  hintEl.textContent = t("hint");
+  lbTitleEl.textContent = t("leaderboard");
+
+  recentTitleEl.textContent = t("recent");
+  renderStats();
+}
+
+function renderStats() {
+  const best = Math.max(0, profile.bestScore | 0);
+  bestLineEl.textContent = `${t("best")}: ${best}`;
+  historyEl.innerHTML = "";
+  const items = (profile.history || []).slice(0, 5);
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.textContent = "-";
+    historyEl.appendChild(li);
+    return;
+  }
+  for (const it of items) {
+    const li = document.createElement("li");
+    const date = new Date(it.ts || Date.now());
+    const when = date.toLocaleString(lang);
+    li.textContent = `${when}  ·  score=${it.score}`;
+    historyEl.appendChild(li);
+  }
+}
+
+function recordResult(score) {
+  const s = Math.max(0, Number(score) | 0);
+  profile.bestScore = Math.max(profile.bestScore | 0, s);
+  const entry = { ts: Date.now(), score: s };
+  profile.history = [entry, ...(profile.history || [])].slice(0, 5);
+  saveProfile();
+  renderStats();
+}
+
+function showLogin(message = "") {
+  loginEl.classList.remove("hidden");
+  hudEl.classList.add("hidden");
+  loginMsg.textContent = message || "";
+  btnQuick.disabled = true;
+  btnSpectate.disabled = true;
+  btnLeave.disabled = true;
+  autoQuickRequested = false;
+  joinInFlight = false;
+}
+
+function showGame() {
+  loginEl.classList.add("hidden");
+  hudEl.classList.remove("hidden");
+  btnQuick.disabled = !profileConfirmed;
+  btnSpectate.disabled = false;
+}
+
+function tryAutoQuickMatch() {
+  if (!autoQuickRequested) return;
+  if (!socket.connected) return;
+  if (!nick) return;
+  if (!profileConfirmed) return;
+  if (currentRoomId) return;
+  if (joinInFlight) return;
+  autoQuickRequested = false;
+  joinInFlight = true;
+  socket.emit("mm:join", { mode: "play" });
+}
+
+langSel.value = lang;
+langSel.addEventListener("change", () => {
+  const next = langSel.value;
+  lang = I18N[next] ? next : "en";
+  profile.lang = lang;
+  saveProfile();
+  applyLang();
+});
+
+nickInput.value = nick;
+btnLogin.addEventListener("click", () => {
+  const v = sanitizeNick(nickInput.value);
+  if (!v) {
+    showLogin(t("needNick"));
+    nickInput.focus();
+    return;
+  }
+  nick = v;
+  profile.nick = nick;
+  saveProfile();
+  meEl.textContent = `nick: ${nick}`;
+  profileConfirmed = false;
+  btnQuick.disabled = true;
+  autoQuickRequested = true;
+  joinInFlight = false;
+  socket.emit("profile:set", { nick });
+  showGame();
+
+  // If the server already knows the nick (e.g. session restore), join immediately.
+  tryAutoQuickMatch();
+});
+nickInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnLogin.click();
+});
 
 // If the page is opened from another port (or even file://), force the Socket.IO
 // connection to the backend server on :6868 by default.
@@ -60,11 +358,11 @@ function getAxis() {
 }
 
 socket.on("connect", () => {
-  statusEl.textContent = `connected (${backendUrl})`;
+  statusEl.textContent = `${t("connected")} (${backendUrl})`;
 });
 
 socket.on("disconnect", () => {
-  statusEl.textContent = "disconnected";
+  statusEl.textContent = t("disconnected");
 });
 
 socket.on("connect_error", (err) => {
@@ -76,22 +374,71 @@ socket.on("connect_error", (err) => {
 socket.on("auth", (payload) => {
   if (payload?.token && payload.token !== token) {
     token = payload.token;
-    localStorage.setItem(STORAGE_KEY, token);
+    localStorage.setItem(STORAGE_TOKEN, token);
+  }
+  if (payload?.nick && !nick) {
+    nick = sanitizeNick(payload.nick);
+    profile.nick = nick;
+    saveProfile();
+  }
+  if (payload?.nick) {
+    profileConfirmed = true;
+    btnQuick.disabled = false;
+    tryAutoQuickMatch();
   }
   if (payload?.playerId) {
     myId = payload.playerId;
-    meEl.textContent = `id: ${myId.slice(0, 6)}`;
   }
+  if (nick) meEl.textContent = `nick: ${nick}`;
 });
 
 socket.on("hello", (payload) => {
-  if (payload?.playerId && !myId) {
-    myId = payload.playerId;
-    meEl.textContent = `id: ${myId.slice(0, 6)}`;
+  if (payload?.playerId && !myId) myId = payload.playerId;
+  if (payload?.nick && !nick) {
+    nick = sanitizeNick(payload.nick);
+    profile.nick = nick;
+    saveProfile();
+    nickInput.value = nick;
   }
 });
 
+socket.on("profile:ok", (payload) => {
+  if (payload?.nick) {
+    nick = sanitizeNick(payload.nick);
+    profile.nick = nick;
+    saveProfile();
+    meEl.textContent = `nick: ${nick}`;
+    profileConfirmed = true;
+    btnQuick.disabled = false;
+    tryAutoQuickMatch();
+  }
+});
+
+socket.on("login:required", () => {
+  profileConfirmed = false;
+  joinInFlight = false;
+  showLogin(t("needNick"));
+});
+
+socket.on("game:over", (payload = {}) => {
+  const score = payload.score ?? 0;
+  recordResult(score);
+
+  // reset in-room UI
+  currentRoomId = null;
+  currentMode = null;
+  roomEl.textContent = "";
+  lbEl.innerHTML = "";
+  btnLeave.disabled = true;
+
+  // go back to login page
+  profileConfirmed = false;
+  joinInFlight = false;
+  showLogin(I18N[lang]?.gameOver ? I18N[lang].gameOver(score) : I18N.en.gameOver(score));
+});
+
 socket.on("room:joined", ({ room, mode }) => {
+  joinInFlight = false;
   currentRoomId = room?.id ?? null;
   currentMode = mode;
   roomEl.textContent = currentRoomId ? `room: ${currentRoomId} (${mode})` : "";
@@ -100,12 +447,13 @@ socket.on("room:joined", ({ room, mode }) => {
 });
 
 socket.on("room:left", () => {
+  joinInFlight = false;
   currentRoomId = null;
   currentMode = null;
   roomEl.textContent = "";
   btnLeave.disabled = true;
   lbEl.innerHTML = "";
-  statusEl.textContent = "connected";
+  statusEl.textContent = `${t("connected")} (${backendUrl})`;
 });
 
 socket.on("state", (snap) => {
@@ -115,13 +463,13 @@ socket.on("state", (snap) => {
 });
 
 socket.on("leaderboard", (payload) => {
-  if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId)
-    return;
+  if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
   const top = payload?.top ?? [];
   lbEl.innerHTML = "";
   for (const entry of top) {
     const li = document.createElement("li");
-    li.textContent = `${entry.id.slice(0, 6)}  score=${entry.score}`;
+    const label = entry.name ? entry.name : entry.id.slice(0, 6);
+    li.textContent = `${label}  score=${entry.score}`;
     lbEl.appendChild(li);
   }
 });
@@ -134,16 +482,22 @@ setInterval(() => {
 }, 1000 / 30);
 
 btnQuick.addEventListener("click", () => {
-  if (!socket.connected) {
-    statusEl.textContent = `not connected (${backendUrl})`;
+  if (!nick) {
+    showLogin(t("needNick"));
     return;
   }
+  if (!socket.connected) {
+    statusEl.textContent = `${t("notConnected")} (${backendUrl})`;
+    return;
+  }
+  if (currentRoomId || joinInFlight) return;
+  joinInFlight = true;
   socket.emit("mm:join", { mode: "play" });
 });
 
 btnSpectate.addEventListener("click", () => {
   if (!socket.connected) {
-    statusEl.textContent = `not connected (${backendUrl})`;
+    statusEl.textContent = `${t("notConnected")} (${backendUrl})`;
     return;
   }
   socket.emit("mm:join", { mode: "spectate" });
@@ -259,10 +613,17 @@ function frame(now) {
       ctx.stroke();
     }
 
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
     ctx.font = "12px system-ui";
     ctx.textAlign = "center";
     ctx.fillText(`${p1.score}`, x, y + 4);
+
+    const name = p1.name || (p1.id ? p1.id.slice(0, 6) : "");
+    if (name) {
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(name, x, y - r - 8);
+    }
   }
 
   ctx.restore();
@@ -271,3 +632,9 @@ function frame(now) {
 }
 
 requestAnimationFrame(frame);
+
+// Initial UI
+applyLang();
+renderStats();
+showLogin("");
+nickInput.focus();

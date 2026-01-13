@@ -34,8 +34,10 @@ export function createGame({ tickHz, broadcastHz, world }) {
     start,
     stop,
     addPlayer: worldState.addPlayer,
+    setPlayerName: worldState.setPlayerName,
     removePlayer: worldState.removePlayer,
     setPlayerInput: worldState.setPlayerInput,
+    drainEvents: worldState.drainEvents,
     getSnapshot: worldState.getSnapshot,
     getWorldInfo: () => ({ ...worldState.getWorldInfo(), tickHz, broadcastHz })
   };
