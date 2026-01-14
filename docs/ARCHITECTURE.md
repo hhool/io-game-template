@@ -23,3 +23,7 @@ Examples live under `examples/*` and are intended to reuse the same core.
 
 Current approach: examples are documentation + configuration overlays first.
 As features diverge (Agar/Snake/Paper rules), move the game rules behind a "rules" interface and keep networking/input/rendering in core.
+
+## Rules API (next refactor)
+
+See [RULES_API.md](RULES_API.md) for the draft interface that will allow swapping game rules (Agar/Snake/Slither/Paper/Pacer) on top of the same core.
