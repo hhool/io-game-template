@@ -2,6 +2,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs/promises';
 
 import express from 'express';
 import { Server as SocketIOServer } from 'socket.io';
@@ -18,6 +19,36 @@ const __dirname = path.dirname(__filename);
 const PORT = Number.parseInt(process.env.PORT ?? '6868', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const REDIS_URL = process.env.REDIS_URL || '';
+
+async function loadPublicConfig() {
+  const configPath = path.join(__dirname, 'public', 'config.json');
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('[config] failed to read public/config.json, using defaults:', e?.message || e);
+    return {};
+  }
+}
+
+function numberFromEnv(name) {
+  const v = process.env[name];
+  if (v == null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function resolveMovementConfig(publicConfig) {
+  const baseSpeed = numberFromEnv('MOVE_BASE_SPEED') ?? (Number.isFinite(publicConfig?.movement?.baseSpeed) ? publicConfig.movement.baseSpeed : 192);
+  const damping = numberFromEnv('MOVE_DAMPING') ?? (Number.isFinite(publicConfig?.movement?.damping) ? publicConfig.movement.damping : 0.2);
+  const blendMax = numberFromEnv('MOVE_BLEND_MAX') ?? (Number.isFinite(publicConfig?.movement?.blendMax) ? publicConfig.movement.blendMax : 0.5);
+
+  return {
+    baseSpeed: Math.max(1, baseSpeed),
+    damping: Math.max(0, damping),
+    blendMax: Math.max(0, Math.min(1, blendMax))
+  };
+}
 
 function pickLanIPv4() {
   const nets = os.networkInterfaces();
@@ -78,10 +109,15 @@ if (REDIS_URL) {
   console.log('[redis] adapter disabled (set REDIS_URL to enable)');
 }
 
+const publicConfig = await loadPublicConfig();
+const movement = resolveMovementConfig(publicConfig);
+console.log('[movement]', movement);
+
 const rooms = new RoomManager({
   tickHz: 30,
   broadcastHz: 15,
   world: { width: 2800, height: 1800 },
+  movement,
   emptyRoomTtlMs: 60_000,
   sessionTtlMs: 5 * 60_000
 });

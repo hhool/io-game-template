@@ -263,7 +263,7 @@ const defaultConfig = {
     enableMouse: true,
     mouseMode: "point", // point
     enableTouch: isTouchCapable,
-    touchMode: isTouchCapable ? "joystick" : "off", // joystick | point | off
+    touchMode: isTouchCapable ? "point" : "off", // joystick | point | off
     prefer: isTouchCapable ? "touch" : "mouse", // touch | mouse | keyboard
   },
   minimap: {
@@ -327,8 +327,15 @@ const inputModel = {
   keyboard: { ax: 0, ay: 0, boost: false },
   mouse: { ax: 0, ay: 0, boost: false, active: false },
   touch: { ax: 0, ay: 0, boost: false, active: false },
+  lastDir: { ax: 0, ay: 0, valid: false },
+  recordLastDir(ax, ay) {
+    if (!ax && !ay) return;
+    this.lastDir = { ax, ay, valid: true };
+  },
   get() {
     const prefer = config?.controls?.prefer || "touch";
+
+    const nonZero = (v) => Math.abs(v.ax) + Math.abs(v.ay) > 1e-4;
 
     const order =
       prefer === "mouse"
@@ -338,26 +345,37 @@ const inputModel = {
           : ["touch", "mouse", "keyboard"];
 
     for (const k of order) {
-      if (k === "touch" && this.useTouch && this.touch.active) return this.touch;
-      if (k === "mouse" && this.useMouse && this.mouse.active) return this.mouse;
-      if (k === "keyboard" && this.useKeyboard) return this.keyboard;
+      if (k === "touch" && this.useTouch && this.touch.active && nonZero(this.touch)) return this.touch;
+      if (k === "mouse" && this.useMouse && this.mouse.active && nonZero(this.mouse)) return this.mouse;
+      if (k === "keyboard" && this.useKeyboard && nonZero(this.keyboard)) return this.keyboard;
     }
+
+    if (this.lastDir.valid) return { ax: this.lastDir.ax, ay: this.lastDir.ay, boost: false };
     return { ax: 0, ay: 0, boost: false };
   },
   setKeyboard(ax, ay, boost) {
     this.keyboard = { ax, ay, boost: Boolean(boost) };
+    this.recordLastDir(ax, ay);
   },
   setMouse(ax, ay, boost, active) {
     this.mouse = { ax, ay, boost: Boolean(boost), active: Boolean(active) };
+    if (this.mouse.active) this.recordLastDir(ax, ay);
   },
   setTouch(ax, ay, boost, active) {
     this.touch = { ax, ay, boost: Boolean(boost), active: Boolean(active) };
+    if (this.touch.active) this.recordLastDir(ax, ay);
   },
   resetMouse() {
     this.setMouse(0, 0, false, false);
   },
+  releaseMouse() {
+    this.mouse = { ...this.mouse, active: false };
+  },
   resetTouch() {
     this.setTouch(0, 0, false, false);
+  },
+  releaseTouch() {
+    this.touch = { ...this.touch, active: false };
   },
 };
 
@@ -385,6 +403,63 @@ const pointControl = {
   x: 0,
   y: 0,
 };
+
+const mouseJoystick = {
+  active: false,
+  pending: false,
+  timer: null,
+  startX: 0,
+  startY: 0,
+  x: 0,
+  y: 0,
+  maxR: 70,
+  deadzone: 10,
+};
+
+const MOUSE_JOYSTICK_LONGPRESS_MS = 220;
+const MOUSE_JOYSTICK_CANCEL_MOVE_PX = 8;
+
+function cancelMouseJoystickPending() {
+  mouseJoystick.pending = false;
+  if (mouseJoystick.timer) {
+    clearTimeout(mouseJoystick.timer);
+    mouseJoystick.timer = null;
+  }
+}
+
+function stopMouseJoystick() {
+  cancelMouseJoystickPending();
+  mouseJoystick.active = false;
+}
+
+function startMouseJoystickLongPress(e) {
+  cancelMouseJoystickPending();
+  mouseJoystick.pending = true;
+  mouseJoystick.startX = e.clientX;
+  mouseJoystick.startY = e.clientY;
+  mouseJoystick.x = e.clientX;
+  mouseJoystick.y = e.clientY;
+
+  mouseJoystick.timer = setTimeout(() => {
+    mouseJoystick.timer = null;
+    if (!mouseJoystick.pending) return;
+    mouseJoystick.pending = false;
+    mouseJoystick.active = true;
+    // Take over input without forcing a new direction until the user drags.
+    inputModel.setMouse(0, 0, false, true);
+  }, MOUSE_JOYSTICK_LONGPRESS_MS);
+}
+
+function updateMouseJoystickFromEvent(e) {
+  mouseJoystick.x = e.clientX;
+  mouseJoystick.y = e.clientY;
+  const dx = mouseJoystick.x - mouseJoystick.startX;
+  const dy = mouseJoystick.y - mouseJoystick.startY;
+  const v = normalizeStick(dx, dy, { deadzone: mouseJoystick.deadzone, maxR: mouseJoystick.maxR });
+  const boost = e.shiftKey || (e.buttons & 2) !== 0;
+  if (!v.ax && !v.ay) return inputModel.releaseMouse();
+  return inputModel.setMouse(v.ax, v.ay, boost, true);
+}
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -550,20 +625,22 @@ function drawMinimap(snap, camX, camY) {
   ctx.restore();
 }
 
-function normalizeStick(dx, dy) {
+function normalizeStick(dx, dy, opts) {
+  const deadzone = typeof opts?.deadzone === "number" ? opts.deadzone : joystick.deadzone;
+  const maxR = typeof opts?.maxR === "number" ? opts.maxR : joystick.maxR;
   const len = Math.hypot(dx, dy);
-  if (len < joystick.deadzone) return { ax: 0, ay: 0 };
-  const capped = Math.min(joystick.maxR, len);
+  if (len < deadzone) return { ax: 0, ay: 0 };
+  const capped = Math.min(maxR, len);
   const nx = dx / (len || 1);
   const ny = dy / (len || 1);
-  const mag = capped / joystick.maxR;
+  const mag = capped / maxR;
   return { ax: nx * mag, ay: ny * mag };
 }
 
 function touchBoostFromEvent(e) {
   // PointerEvent doesn't expose touches; use navigator maxTouchPoints + active pointers heuristic.
   // We treat "two fingers down" as boost by tracking active pointer count.
-  return activePointers.size >= 2;
+  return activePointers.size === 2;
 }
 
 function setTouchGuideSeen() {
@@ -852,9 +929,16 @@ window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
 const activePointers = new Set();
 
+let touchJoystickGestureActive = false;
+
 function getCanvasCenterClient() {
   const r = canvas.getBoundingClientRect();
   return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+}
+
+function clientPointInCanvas(x, y) {
+  const r = canvas.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
 // Unified pointer-based touch joystick
@@ -864,6 +948,28 @@ canvas.addEventListener(
     if (!inputModel.useTouch) return;
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
     activePointers.add(e.pointerId);
+
+    // 3-finger gesture: activate on-screen joystick.
+    if (activePointers.size >= 3 && !touchJoystickGestureActive) {
+      touchJoystickGestureActive = true;
+      joystick.active = true;
+      joystick.pointerId = e.pointerId;
+      joystick.startX = e.clientX;
+      joystick.startY = e.clientY;
+      joystick.x = e.clientX;
+      joystick.y = e.clientY;
+      // Take over input without forcing a new direction until the user drags.
+      inputModel.setTouch(0, 0, touchBoostFromEvent(e), true);
+      return;
+    }
+
+    // While gesture joystick is active, ignore point-steering starts.
+    if (touchJoystickGestureActive) {
+      const boost = touchBoostFromEvent(e);
+      const cur = inputModel.touch;
+      if (cur.active) inputModel.setTouch(cur.ax, cur.ay, boost, true);
+      return;
+    }
 
     // Touch point mode: steer towards screen point
     if (pointControl.enabled) {
@@ -914,6 +1020,19 @@ canvas.addEventListener(
     if (!inputModel.useTouch) return;
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
 
+    if (touchJoystickGestureActive) {
+      if (!joystick.active) return;
+      if (e.pointerId !== joystick.pointerId) return;
+      joystick.x = e.clientX;
+      joystick.y = e.clientY;
+      const dx = joystick.x - joystick.startX;
+      const dy = joystick.y - joystick.startY;
+      const v = normalizeStick(dx, dy);
+      if (!v.ax && !v.ay) return inputModel.releaseTouch();
+      inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
+      return;
+    }
+
     if (pointControl.enabled) {
       if (!pointControl.active) return;
       if (e.pointerId !== pointControl.pointerId) return;
@@ -923,6 +1042,7 @@ canvas.addEventListener(
       const dx = pointControl.x - cx;
       const dy = pointControl.y - cy;
       const v = normalizeStick(dx, dy);
+      if (!v.ax && !v.ay) return inputModel.releaseTouch();
       inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
       return;
     }
@@ -936,6 +1056,7 @@ canvas.addEventListener(
     const dx = joystick.x - joystick.startX;
     const dy = joystick.y - joystick.startY;
     const v = normalizeStick(dx, dy);
+    if (!v.ax && !v.ay) return inputModel.releaseTouch();
     inputModel.setTouch(v.ax, v.ay, touchBoostFromEvent(e), true);
   },
   { passive: true }
@@ -945,11 +1066,28 @@ function endPointer(e) {
   if (!inputModel.useTouch) return;
   activePointers.delete(e.pointerId);
 
+  if (touchJoystickGestureActive) {
+    // End gesture joystick when we drop below 3 fingers, or if the controlling finger lifts.
+    if (activePointers.size < 3 || e.pointerId === joystick.pointerId) {
+      touchJoystickGestureActive = false;
+      joystick.active = false;
+      joystick.pointerId = null;
+      pointControl.active = false;
+      pointControl.pointerId = null;
+      inputModel.releaseTouch();
+    } else {
+      const boost = touchBoostFromEvent(e);
+      const tcur = inputModel.touch;
+      if (tcur.active) inputModel.setTouch(tcur.ax, tcur.ay, boost, true);
+    }
+    return;
+  }
+
   if (pointControl.enabled) {
     if (pointControl.active && e.pointerId === pointControl.pointerId) {
       pointControl.active = false;
       pointControl.pointerId = null;
-      inputModel.resetTouch();
+      inputModel.releaseTouch();
     } else if (pointControl.active) {
       const boost = touchBoostFromEvent(e);
       const tcur = inputModel.touch;
@@ -962,7 +1100,7 @@ function endPointer(e) {
   if (joystick.active && e.pointerId === joystick.pointerId) {
     joystick.active = false;
     joystick.pointerId = null;
-    inputModel.resetTouch();
+    inputModel.releaseTouch();
   } else {
     // pointer lifted that wasn't the controlling one; update boost state
     if (joystick.active) {
@@ -1017,9 +1155,23 @@ function updateMouseFromEvent(e) {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener(
+  "dblclick",
+  (e) => {
+    if (!inputModel.useMouse) return;
+    // Double click: quick set direction, then coast.
+    stopMouseJoystick();
+    const v = mouseVecFromEvent(e);
+    inputModel.setMouse(v.ax, v.ay, false, true);
+    inputModel.releaseMouse();
+  },
+  { passive: true }
+);
+
+canvas.addEventListener(
   "mouseleave",
   () => {
-    inputModel.resetMouse();
+    stopMouseJoystick();
+    inputModel.releaseMouse();
   },
   { passive: true }
 );
@@ -1029,7 +1181,20 @@ canvas.addEventListener(
   (e) => {
     if (!inputModel.useMouse) return;
     if (e.button !== 0 && e.button !== 2) return;
-    updateMouseFromEvent(e);
+
+    // Right mouse: keep existing behavior (boost / steer).
+    if (e.button === 2) {
+      updateMouseFromEvent(e);
+      return;
+    }
+
+    // Left mouse: long-press to show joystick unless this is a double-click.
+    if (e.detail >= 2) {
+      cancelMouseJoystickPending();
+      return;
+    }
+
+    startMouseJoystickLongPress(e);
   },
   { passive: true }
 );
@@ -1038,11 +1203,29 @@ window.addEventListener(
   "mousemove",
   (e) => {
     if (!inputModel.useMouse) return;
+
+    // Mouse joystick (long-press) takes priority.
+    if (mouseJoystick.pending && !mouseJoystick.active) {
+      const dx = e.clientX - mouseJoystick.startX;
+      const dy = e.clientY - mouseJoystick.startY;
+      if (Math.hypot(dx, dy) >= MOUSE_JOYSTICK_CANCEL_MOVE_PX) cancelMouseJoystickPending();
+    }
+    if (mouseJoystick.active) {
+      updateMouseJoystickFromEvent(e);
+      return;
+    }
+
     // In point mode we always steer while cursor is over the canvas.
     if (mouseMode() === "point") {
-      if (e.target !== canvas) return;
-      updateMouseFromEvent(e);
-      return;
+      // While waiting for long-press joystick, don't steer.
+      if (mouseJoystick.pending) return;
+      if (!clientPointInCanvas(e.clientX, e.clientY)) {
+        if (inputModel.mouse.active) inputModel.releaseMouse();
+        return;
+      }
+      // Only steer while a mouse button is held; otherwise keep last direction.
+      if ((e.buttons & 1) === 0 && (e.buttons & 2) === 0) return;
+      return updateMouseFromEvent(e);
     }
     // In hold mode, only steer while mouse buttons are held.
     if (!inputModel.mouse.active) return;
@@ -1052,15 +1235,60 @@ window.addEventListener(
 );
 
 window.addEventListener(
+  "blur",
+  () => {
+    if (!inputModel.useMouse) return;
+    stopMouseJoystick();
+    inputModel.releaseMouse();
+  },
+  { passive: true }
+);
+
+window.addEventListener(
+  "mouseleave",
+  () => {
+    if (!inputModel.useMouse) return;
+    stopMouseJoystick();
+    inputModel.releaseMouse();
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (!inputModel.useMouse) return;
+    if (document.hidden) {
+      stopMouseJoystick();
+      inputModel.releaseMouse();
+    }
+  },
+  { passive: true }
+);
+
+window.addEventListener(
   "mouseup",
   (e) => {
     if (!inputModel.useMouse) return;
+
+    // End mouse joystick / long-press tracking.
+    if (e.button === 0) {
+      if (mouseJoystick.active) {
+        stopMouseJoystick();
+        inputModel.releaseMouse();
+        return;
+      }
+      cancelMouseJoystickPending();
+      // In point mode, release on left mouseup to coast.
+      if (mouseMode() === "point") inputModel.releaseMouse();
+    }
+
     if (mouseMode() === "hold") {
       if (e.button === 0 || e.button === 2) inputModel.resetMouse();
       return;
     }
-    // point mode: keep steering, but update boost state
-    updateMouseFromEvent(e);
+    // point mode: do not overwrite direction on mouseup (prevents snap to a fixed direction)
+    return;
   },
   { passive: true }
 );
@@ -1267,7 +1495,7 @@ function frame(now) {
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
   // Touch guide overlay (screen-space)
-  if ((joystick.enabled && (joystick.active || joystick.showGuide)) || (pointControl.enabled && (pointControl.active || joystick.showGuide))) {
+  if (((joystick.enabled || touchJoystickGestureActive) && (joystick.active || joystick.showGuide)) || (pointControl.enabled && (pointControl.active || joystick.showGuide))) {
     if (joystick.enabled) {
       const cx = joystick.active ? joystick.startX : window.innerWidth * 0.25;
       const cy = joystick.active ? joystick.startY : window.innerHeight * 0.75;
@@ -1335,6 +1563,44 @@ function frame(now) {
 
       ctx.restore();
     }
+  }
+
+  // Mouse joystick overlay (screen-space)
+  if (mouseJoystick.active) {
+    const cx = mouseJoystick.startX;
+    const cy = mouseJoystick.startY;
+    const dx = mouseJoystick.x - mouseJoystick.startX;
+    const dy = mouseJoystick.y - mouseJoystick.startY;
+    const len = Math.hypot(dx, dy);
+    const r = mouseJoystick.maxR;
+    const knobR = 18;
+
+    let kx = cx;
+    let ky = cy;
+    if (len > 0.001) {
+      const capped = Math.min(r, len);
+      kx = cx + (dx / len) * capped;
+      ky = cy + (dy / len) * capped;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,193,7,0.60)";
+    ctx.beginPath();
+    ctx.arc(kx, ky, knobR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // interpolation factor based on snapshot times

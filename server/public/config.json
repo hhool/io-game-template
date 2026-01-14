@@ -21,6 +21,11 @@
     "enabled": false,
     "count": 6
   },
+  "movement": {
+    "baseSpeed": 192,
+    "damping": 0.2,
+    "blendMax": 0.5
+  },
   "guide": {
     "touchGuideOnFirstUse": true
   }

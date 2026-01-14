@@ -135,6 +135,19 @@ window.gameControls.configure({ bots: { enabled: false } })
 URL 传参快速测试（不持久化）：
 - `/?bots=1&botCount=6`
 
+支持的机器人 URL 参数：
+- `bots=1|true|yes|on`（开启），`bots=0|false|no|off`（关闭）
+- `botCount=<0-30>`（也兼容 `botsCount` / `bots_count`）
+
+## 手感（速度/阻尼）配置
+服务端移动手感可通过 `server/public/config.json` 的 `movement` 配置（默认值就是当前代码数值）：
+- `movement.baseSpeed`: 数字（默认 `192`）
+- `movement.damping`: 数字（默认 `0.2`），计算方式：`blend = clamp(dt * damping, 0, blendMax)`
+- `movement.blendMax`: 0..1（默认 `0.5`）
+
+也支持环境变量覆盖：
+- `MOVE_BASE_SPEED`, `MOVE_DAMPING`, `MOVE_BLEND_MAX`
+
 ## 下一步扩展方向
 - PaperIO：加入“领地填充 + 尾迹碰撞 + 回到领地闭合”
 - Agar：加入“玩家吞噬 + 质量分裂/喷射 + 视野缩放”

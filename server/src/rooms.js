@@ -11,10 +11,11 @@ function makeRoomId() {
 }
 
 export class RoomManager {
-  constructor({ tickHz, broadcastHz, world, emptyRoomTtlMs = 60_000, sessionTtlMs = 5 * 60_000 }) {
+  constructor({ tickHz, broadcastHz, world, movement, emptyRoomTtlMs = 60_000, sessionTtlMs = 5 * 60_000 }) {
     this.tickHz = tickHz;
     this.broadcastHz = broadcastHz;
     this.world = world;
+    this.movement = movement;
 
     this.emptyRoomTtlMs = emptyRoomTtlMs;
     this.sessionTtlMs = sessionTtlMs;
@@ -101,7 +102,7 @@ export class RoomManager {
     if (roomId && this.rooms.has(roomId)) return this.rooms.get(roomId);
 
     const id = roomId || makeRoomId();
-    const game = createGame({ tickHz: this.tickHz, broadcastHz: this.broadcastHz, world: this.world });
+    const game = createGame({ tickHz: this.tickHz, broadcastHz: this.broadcastHz, world: this.world, movement: this.movement });
 
     const room = {
       id,

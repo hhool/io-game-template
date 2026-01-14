@@ -17,9 +17,18 @@ function dist2(ax, ay, bx, by) {
   return dx * dx + dy * dy;
 }
 
-export function createWorldState({ width, height }) {
+function normalizeMovementConfig(movement) {
+  const baseSpeed = Number.isFinite(movement?.baseSpeed) ? Math.max(1, movement.baseSpeed) : 192;
+  const damping = Number.isFinite(movement?.damping) ? Math.max(0, movement.damping) : 0.2;
+  const blendMax = Number.isFinite(movement?.blendMax) ? clamp(movement.blendMax, 0, 1) : 0.5;
+  return { baseSpeed, damping, blendMax };
+}
+
+export function createWorldState({ width, height }, { movement } = {}) {
   const players = new Map();
   const inputs = new Map();
+
+  const movementCfg = normalizeMovementConfig(movement);
 
   const botIds = new Set();
   const botBrain = new Map();
@@ -159,7 +168,7 @@ export function createWorldState({ width, height }) {
       const input = inputs.get(id) ?? { ax: 0, ay: 0, boost: false };
 
       // Agar-style: bigger => slower
-      const baseSpeed = 360;
+      const baseSpeed = movementCfg.baseSpeed;
       const sizePenalty = clamp(18 / p.r, 0.35, 1.0);
       const boostMul = input.boost ? 1.15 : 1.0;
       const speed = baseSpeed * sizePenalty * boostMul;
@@ -171,7 +180,8 @@ export function createWorldState({ width, height }) {
       // smooth velocity
       const targetVx = nx * speed;
       const targetVy = ny * speed;
-      const blend = clamp(dt * 10, 0, 1);
+      // Lower blend -> slower acceleration/deceleration (less snappy)
+      const blend = clamp(dt * movementCfg.damping, 0, movementCfg.blendMax);
       p.vx = p.vx + (targetVx - p.vx) * blend;
       p.vy = p.vy + (targetVy - p.vy) * blend;
 

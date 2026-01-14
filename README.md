@@ -135,6 +135,19 @@ window.gameControls.configure({ bots: { enabled: false } })
 URL param quick test (no persistence):
 - `/?bots=1&botCount=6`
 
+Supported bot URL params:
+- `bots=1|true|yes|on` (enable), `bots=0|false|no|off` (disable)
+- `botCount=<0-30>` (also accepts `botsCount` / `bots_count`)
+
+## Movement tuning
+Server-side movement feel can be tuned via `server/public/config.json` under `movement` (defaults are the current code values):
+- `movement.baseSpeed`: number (default `192`)
+- `movement.damping`: number (default `0.2`) — used as `blend = clamp(dt * damping, 0, blendMax)`
+- `movement.blendMax`: 0..1 (default `0.5`)
+
+Optional env overrides:
+- `MOVE_BASE_SPEED`, `MOVE_DAMPING`, `MOVE_BLEND_MAX`
+
 ## Protocol (implemented)
 
 ### Identity & reconnect

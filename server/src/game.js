@@ -1,7 +1,7 @@
 import { createWorldState } from './state.js';
 
-export function createGame({ tickHz, broadcastHz, world }) {
-  const worldState = createWorldState(world);
+export function createGame({ tickHz, broadcastHz, world, movement }) {
+  const worldState = createWorldState(world, { movement });
 
   let tickTimer = null;
   let broadcastTimer = null;
