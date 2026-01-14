@@ -26,6 +26,39 @@ const btnLogin = document.getElementById("btnLogin");
 const loginMsg = document.getElementById("loginMsg");
 const bestLineEl = document.getElementById("bestLine");
 const historyEl = document.getElementById("history");
+const statsTitleEl = document.getElementById("statsTitle");
+const bestTitleEl = document.getElementById("bestTitle");
+const colDateEl = document.getElementById("colDate");
+const colScoreEl = document.getElementById("colScore");
+const recentColDateEl = document.getElementById("recentColDate");
+const recentColScoreEl = document.getElementById("recentColScore");
+const btnStatsToggle = document.getElementById("btnStatsToggle");
+const statsBodyEl = document.getElementById("statsBody");
+
+function setLoginMessage(msg) {
+  if (!loginMsg) return;
+  loginMsg.textContent = msg || "";
+}
+
+// Surface runtime errors on the login screen so "click does nothing" has a visible cause.
+window.addEventListener("error", (e) => {
+  const message = e?.message ? String(e.message) : "Unknown error";
+  if (loginEl && !loginEl.classList.contains("hidden")) {
+    setLoginMessage(`JS error: ${message}`);
+  }
+  // eslint-disable-next-line no-console
+  console.error("[window.error]", e);
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e?.reason;
+  const message = reason?.message ? String(reason.message) : String(reason || "Unknown rejection");
+  if (loginEl && !loginEl.classList.contains("hidden")) {
+    setLoginMessage(`Promise error: ${message}`);
+  }
+  // eslint-disable-next-line no-console
+  console.error("[window.unhandledrejection]", e);
+});
 
 // --- Custom dropdowns (desktop/device-emulation), backed by native <select> ---
 const customDropdowns = new Map();
@@ -353,6 +386,11 @@ const I18N = {
     enter: "Enter",
     best: "Best score",
     recent: "Recent results (max 5)",
+    stats: "Stats",
+    date: "Date",
+    score: "Score",
+    show: "Show",
+    hide: "Hide",
     hudTitle: "1wlgame IO Prototype",
     quick: "Quick Match",
     spectate: "Spectate",
@@ -365,6 +403,8 @@ const I18N = {
     touchGuidePoint: "Hold to steer",
     leaderboard: "Leaderboard",
     players: "Players",
+    joining: "Joining…",
+    loginWait: "Waiting for server…",
     connecting: "connecting…",
     connected: "connected",
     disconnected: "disconnected",
@@ -381,6 +421,11 @@ const I18N = {
     enter: "Войти",
     best: "Лучший счёт",
     recent: "Последние результаты (до 5)",
+    stats: "Статистика",
+    date: "Дата",
+    score: "Счёт",
+    show: "Показать",
+    hide: "Скрыть",
     hudTitle: "1wlgame IO Prototype",
     quick: "Быстрый матч",
     spectate: "Наблюдать",
@@ -393,6 +438,8 @@ const I18N = {
     touchGuidePoint: "Удерживайте для управления",
     leaderboard: "Таблица лидеров",
     players: "Игроки",
+    joining: "Входим…",
+    loginWait: "Ожидание сервера…",
     connecting: "подключение…",
     connected: "подключено",
     disconnected: "отключено",
@@ -409,6 +456,11 @@ const I18N = {
     enter: "Entrer",
     best: "Meilleur score",
     recent: "Résultats récents (max 5)",
+    stats: "Stats",
+    date: "Date",
+    score: "Score",
+    show: "Afficher",
+    hide: "Masquer",
     hudTitle: "1wlgame IO Prototype",
     quick: "Match rapide",
     spectate: "Observer",
@@ -421,6 +473,8 @@ const I18N = {
     touchGuidePoint: "Maintenez pour diriger",
     leaderboard: "Classement",
     players: "Joueurs",
+    joining: "Connexion…",
+    loginWait: "En attente du serveur…",
     connecting: "connexion…",
     connected: "connecté",
     disconnected: "déconnecté",
@@ -437,6 +491,11 @@ const I18N = {
     enter: "进入",
     best: "最佳成绩",
     recent: "最近战绩（最多 5 条）",
+    stats: "战绩",
+    date: "日期",
+    score: "分数",
+    show: "显示",
+    hide: "隐藏",
     hudTitle: "1wlgame IO Prototype",
     quick: "快速匹配",
     spectate: "观战",
@@ -449,6 +508,8 @@ const I18N = {
     touchGuidePoint: "按住控制方向",
     leaderboard: "排行榜",
     players: "玩家",
+    joining: "正在进入…",
+    loginWait: "等待服务器响应…",
     connecting: "连接中…",
     connected: "已连接",
     disconnected: "已断开",
@@ -465,6 +526,11 @@ const I18N = {
     enter: "Start",
     best: "Bester Score",
     recent: "Letzte Ergebnisse (max. 5)",
+    stats: "Statistik",
+    date: "Datum",
+    score: "Punkte",
+    show: "Anzeigen",
+    hide: "Ausblenden",
     hudTitle: "1wlgame IO Prototype",
     quick: "Schnelles Match",
     spectate: "Zuschauen",
@@ -477,6 +543,8 @@ const I18N = {
     touchGuidePoint: "Halten zum Steuern",
     leaderboard: "Rangliste",
     players: "Spieler",
+    joining: "Beitreten…",
+    loginWait: "Warte auf Server…",
     connecting: "verbinde…",
     connected: "verbunden",
     disconnected: "getrennt",
@@ -493,6 +561,11 @@ const I18N = {
     enter: "دخول",
     best: "أفضل نتيجة",
     recent: "آخر النتائج (حد أقصى 5)",
+    stats: "الإحصائيات",
+    date: "التاريخ",
+    score: "النتيجة",
+    show: "إظهار",
+    hide: "إخفاء",
     hudTitle: "1wlgame IO Prototype",
     quick: "مباراة سريعة",
     spectate: "مشاهدة",
@@ -505,6 +578,8 @@ const I18N = {
     touchGuidePoint: "اضغط للتوجيه",
     leaderboard: "لوحة الصدارة",
     players: "اللاعبون",
+    joining: "جارٍ الدخول…",
+    loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
     connected: "متصل",
     disconnected: "غير متصل",
@@ -522,6 +597,16 @@ let profileConfirmed = false;
 let autoQuickRequested = false;
 let joinInFlight = false;
 let socket = null;
+
+// --- Runtime state (declare early to avoid TDZ when applyLang/applyConfig run) ---
+let myId = null;
+let currentRoomId = null;
+let currentMode = null;
+let currentRulesId = null;
+let pendingRulesId = null;
+let world = { width: 2800, height: 1800 };
+let lastSnapshot = { ts: 0, players: [], pellets: [] };
+let prevSnapshot = null;
 
 // --- Input model (keyboard + touch) ---
 const STORAGE_TOUCH_GUIDE = "1wlgame_touch_guide_seen_v1";
@@ -1046,9 +1131,35 @@ function applyLang() {
   lbTitleEl.textContent = t("leaderboard");
   if (playersTitleEl) playersTitleEl.textContent = t("players");
 
+  if (statsTitleEl) statsTitleEl.textContent = t("stats");
+  if (bestTitleEl) bestTitleEl.textContent = t("best");
+  if (colDateEl) colDateEl.textContent = t("date");
+  if (colScoreEl) colScoreEl.textContent = t("score");
+  if (recentColDateEl) recentColDateEl.textContent = t("date");
+  if (recentColScoreEl) recentColScoreEl.textContent = t("score");
+  if (btnStatsToggle) {
+    const collapsed = statsBodyEl?.classList?.contains("collapsed");
+    btnStatsToggle.textContent = collapsed ? t("show") : t("hide");
+  }
+
   recentTitleEl.textContent = t("recent");
   renderStats();
   renderPlayersList(true);
+}
+
+function setStatsCollapsed(collapsed) {
+  if (!statsBodyEl || !btnStatsToggle) return;
+  const c = Boolean(collapsed);
+  statsBodyEl.classList.toggle("collapsed", c);
+  btnStatsToggle.setAttribute("aria-pressed", c ? "true" : "false");
+  btnStatsToggle.textContent = c ? t("show") : t("hide");
+}
+
+if (btnStatsToggle) {
+  btnStatsToggle.addEventListener("click", () => {
+    const collapsed = statsBodyEl?.classList?.contains("collapsed");
+    setStatsCollapsed(!collapsed);
+  });
 }
 
 function setPlayersCollapsed(collapsed) {
@@ -1167,13 +1278,35 @@ fetch("/config.json", { cache: "no-store" })
   });
 
 function renderStats() {
-  const best = Math.max(0, profile.bestScore | 0);
-  bestLineEl.textContent = `${t("best")}: ${best}`;
-  historyEl.innerHTML = "";
   const items = (profile.history || []).slice(0, 5);
+
+  // Derive bestAt if missing (older profiles).
+  let bestScore = Math.max(0, profile.bestScore | 0);
+  let bestAt = Number.isFinite(profile.bestAt) ? profile.bestAt : 0;
+  if (!bestAt && items.length) {
+    const bestItem = items.slice().sort((a, b) => (b?.score || 0) - (a?.score || 0))[0];
+    if (bestItem && (bestItem.score | 0) === (bestScore | 0)) bestAt = bestItem.ts || 0;
+  }
+
+  // Best row
+  if (bestLineEl) {
+    const dateText = bestAt ? new Date(bestAt).toLocaleString(lang) : "-";
+    bestLineEl.innerHTML = "";
+    const left = document.createElement("span");
+    left.className = bestAt ? "" : "muted";
+    left.textContent = dateText;
+    const right = document.createElement("span");
+    right.textContent = String(bestScore);
+    bestLineEl.appendChild(left);
+    bestLineEl.appendChild(right);
+  }
+
+  // Recent list
+  if (!historyEl) return;
+  historyEl.innerHTML = "";
   if (!items.length) {
     const li = document.createElement("li");
-    li.textContent = "-";
+    li.innerHTML = "<span class=\"muted\">-</span><span class=\"muted\">-</span>";
     historyEl.appendChild(li);
     return;
   }
@@ -1181,14 +1314,21 @@ function renderStats() {
     const li = document.createElement("li");
     const date = new Date(it.ts || Date.now());
     const when = date.toLocaleString(lang);
-    li.textContent = `${when}  ·  score=${it.score}`;
+    const l = document.createElement("span");
+    l.textContent = when;
+    const r = document.createElement("span");
+    r.textContent = String(it.score | 0);
+    li.appendChild(l);
+    li.appendChild(r);
     historyEl.appendChild(li);
   }
 }
 
 function recordResult(score) {
   const s = Math.max(0, Number(score) | 0);
-  profile.bestScore = Math.max(profile.bestScore | 0, s);
+  const prevBest = profile.bestScore | 0;
+  profile.bestScore = Math.max(prevBest, s);
+  if (s > prevBest) profile.bestAt = Date.now();
   const entry = { ts: Date.now(), score: s };
   profile.history = [entry, ...(profile.history || [])].slice(0, 5);
   saveProfile();
@@ -1198,7 +1338,9 @@ function recordResult(score) {
 function showLogin(message = "") {
   loginEl.classList.remove("hidden");
   hudEl.classList.add("hidden");
-  loginMsg.textContent = message || "";
+  setLoginMessage(message || "");
+  btnLogin.disabled = false;
+  nickInput.disabled = false;
   btnQuick.disabled = true;
   btnSpectate.disabled = true;
   btnLeave.disabled = true;
@@ -1352,6 +1494,10 @@ langSel.addEventListener("change", () => {
 
 nickInput.value = nick;
 btnLogin.addEventListener("click", () => {
+  if (!socket?.connected) {
+    showLogin(t("notConnected"));
+    return;
+  }
   const v = sanitizeNick(nickInput.value);
   if (!v) {
     showLogin(t("needNick"));
@@ -1366,11 +1512,21 @@ btnLogin.addEventListener("click", () => {
   btnQuick.disabled = true;
   autoQuickRequested = true;
   joinInFlight = false;
+  setLoginMessage(t("joining"));
+  btnLogin.disabled = true;
+  nickInput.disabled = true;
   socket.emit("profile:set", { nick });
-  showGame();
 
-  // If the server already knows the nick (e.g. session restore), join immediately.
+  // Join will happen when the server confirms the nick (profile:ok/auth).
+  // We keep the login overlay visible until we actually join a room.
   tryAutoQuickMatch();
+
+  // If the server doesn't confirm quickly, show a useful hint instead of "nothing".
+  setTimeout(() => {
+    if (loginEl?.classList?.contains("hidden")) return;
+    if (profileConfirmed || currentRoomId || joinInFlight) return;
+    if (btnLogin.disabled) setLoginMessage(t("loginWait"));
+  }, 1200);
 });
 nickInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") btnLogin.click();
@@ -1389,15 +1545,6 @@ socket = io(backendUrl, {
   transports: ["polling", "websocket"],
   auth: { token },
 });
-
-let myId = null;
-let currentRoomId = null;
-let currentMode = null;
-let currentRulesId = null;
-let pendingRulesId = null;
-let world = { width: 2800, height: 1800 };
-let lastSnapshot = { ts: 0, players: [], pellets: [] };
-let prevSnapshot = null;
 
 function renderRoomLabel() {
   if (!currentRoomId) {
@@ -1781,6 +1928,9 @@ window.addEventListener(
 
 socket.on("connect", () => {
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
+  if (!loginEl.classList.contains("hidden") && !profileConfirmed) {
+    setLoginMessage("");
+  }
 });
 
 socket.on("disconnect", () => {
@@ -1795,6 +1945,10 @@ socket.on("disconnect", () => {
   setRulesDisabled(false);
   if (playersEl) playersEl.innerHTML = "";
   if (playersTitleEl) playersTitleEl.textContent = t("players");
+  if (!loginEl.classList.contains("hidden")) {
+    btnLogin.disabled = false;
+    nickInput.disabled = false;
+  }
 });
 
 socket.on("connect_error", (err) => {
@@ -1811,6 +1965,13 @@ socket.on("connect_error", (err) => {
   setRulesDisabled(false);
   if (playersEl) playersEl.innerHTML = "";
   if (playersTitleEl) playersTitleEl.textContent = t("players");
+
+  // If user is on login screen, show the error there too.
+  if (!loginEl.classList.contains("hidden")) {
+    btnLogin.disabled = false;
+    nickInput.disabled = false;
+    setLoginMessage(`connect_error: ${msg}`);
+  }
 });
 
 socket.on("auth", (payload) => {
@@ -1885,6 +2046,7 @@ socket.on("game:over", (payload = {}) => {
 });
 
 socket.on("room:joined", ({ room, mode }) => {
+  showGame();
   joinInFlight = false;
   currentRoomId = room?.id ?? null;
   currentMode = mode;

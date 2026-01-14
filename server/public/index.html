@@ -49,20 +49,31 @@
         <div id="loginMsg" class="msg"></div>
 
         <div class="stats">
-          <div class="statLine" id="bestLine"></div>
-          <div class="subTitle" id="recentTitle">Recent results</div>
-          <ol id="history"></ol>
-        </div>
+          <div class="statsHeader">
+            <div class="subTitle" id="statsTitle">Stats</div>
+            <button id="btnStatsToggle" class="miniBtn" type="button" aria-pressed="true">Show</button>
+          </div>
 
-        <div class="donate">
-          <a id="donateCoffee" href="https://www.buymeacoffee.com/<your_id>" target="_blank" rel="noreferrer">Buy me a coffee</a>
-          <span class="sep">·</span>
-          <a id="donateLink" href="<your_donation_url>" target="_blank" rel="noreferrer">Donate</a>
+          <div class="statsBody collapsed" id="statsBody">
+            <div class="subTitle" id="bestTitle">Best score</div>
+            <div class="statGridHeader">
+              <span id="colDate">Date</span>
+              <span id="colScore">Score</span>
+            </div>
+            <div class="statGridRow" id="bestLine"></div>
+
+            <div class="subTitle" id="recentTitle">Recent results</div>
+            <div class="statGridHeader">
+              <span id="recentColDate">Date</span>
+              <span id="recentColScore">Score</span>
+            </div>
+            <ol id="history" class="statList"></ol>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="hud" id="hud">
+    <div class="hud hidden" id="hud">
       <div class="title" id="hudTitle">1wlgame IO Prototype</div>
       <div class="meta">
         <span id="status">connecting…</span>
