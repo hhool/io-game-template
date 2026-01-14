@@ -1,15 +1,22 @@
-# 1wlgame
+# io-game-framework
 
 [English](README.md) | 中文
 
-通用 IO Game 骨架：
+开源、可复用的 IO 游戏基础 framework（可用于 Agar/Snake/Slither/Paper 等玩法）：
 - 后端：Express + Socket.IO + 原生 WebSocket（ws）
 - 可选：Redis（Socket.IO Redis adapter，用于多实例扩展）
 - 前端：纯 HTML + JavaScript（Canvas2D）
 
+License：MIT（见 [LICENSE](LICENSE)）。
+
 ## 目录
-- `server/` Node.js 服务端（同时托管静态前端）
-- `docker-compose.yml` Redis
+- Core：
+	- `server/` Node.js 服务端（同时托管静态前端）
+	- `docker-compose.yml` Redis
+- Examples：
+	- `examples/`（不同玩法变体/规则集，逐步补齐）
+- Docs：
+	- `docs/`（架构说明）
 
 ## 运行（无 Redis）
 ```bash

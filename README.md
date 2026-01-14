@@ -1,15 +1,22 @@
-# 1wlgame
+# io-game-framework
 
 English | [中文](README.zh.md)
 
-A minimal, reusable IO-game skeleton:
+An open, reusable IO-game foundation/framework (Agar/Snake/Slither/Paper-style):
 - Backend: Express + Socket.IO + native WebSocket (`ws`)
 - Optional: Redis (Socket.IO Redis adapter for multi-instance scaling)
 - Frontend: plain HTML + JavaScript (Canvas2D)
 
+License: MIT (see [LICENSE](LICENSE)).
+
 ## Layout
-- `server/` Node.js server (also serves the static client)
-- `docker-compose.yml` Redis
+- Core:
+  - `server/` Node.js server (also serves the static client)
+  - `docker-compose.yml` Redis
+- Examples:
+  - `examples/` (variants and planned rulesets)
+- Docs:
+  - `docs/` (architecture notes)
 
 ## Run (no Redis)
 ```bash
