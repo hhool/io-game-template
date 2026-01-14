@@ -3,9 +3,11 @@
 This folder contains example game variants built on top of the core framework.
 
 - `agar-lite/`: current prototype (movement + pellets + bots)
+- `agar-advanced/`: placeholder (planned)
 - `snake-lite/`: placeholder (planned)
 - `slither-lite/`: placeholder (planned)
 - `paper-lite/`: placeholder (planned)
+- `paper-advanced/`: placeholder (planned)
 
 ## How examples work (current stage)
 
