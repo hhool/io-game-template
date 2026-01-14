@@ -139,6 +139,33 @@ Supported bot URL params:
 - `bots=1|true|yes|on` (enable), `bots=0|false|no|off` (disable)
 - `botCount=<0-30>` (also accepts `botsCount` / `bots_count`)
 
+## Roadmap
+Maintain this list by checking items off as you ship.
+
+### P0 (Playable loop)
+- [ ] Eat / mass growth rules (pellets + players)
+- [ ] Death + respawn loop
+- [ ] Camera zoom that scales with player size (and minimap sync)
+- [ ] Basic in-game HUD (players, ping, FPS) + settings panel for minimap/bots/movement
+
+### P1 (Agar-style features)
+- [ ] Split + merge cooldown
+- [ ] Eject mass
+- [ ] Virus / hazards
+- [ ] Skins + basic abuse protection (nick filtering)
+
+### P1 (PaperIO-style features)
+- [ ] Territory fill + scoring
+- [ ] Trail collision + safe reconnect behavior
+- [ ] Border rules / anti-border camping
+
+### P2 (Multiplayer + engineering)
+- [ ] Better matchmaking (capacity, room selection rules)
+- [ ] Leaderboard persistence (optional Redis)
+- [ ] Anti-cheat (input rate limit, anomaly detection)
+- [ ] Stress test scripts (bots) + stability tests (reconnect, lag)
+- [ ] Deployment packaging (Docker + reverse-proxy/HTTPS notes)
+
 ## Movement tuning
 Server-side movement feel can be tuned via `server/public/config.json` under `movement` (defaults are the current code values):
 - `movement.baseSpeed`: number (default `192`)
