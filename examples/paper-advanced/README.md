@@ -1,5 +1,7 @@
 # paper-advanced (planned)
 
+English | [中文](README.zh.md)
+
 Goal: a more complete Paper.io-like ruleset on top of the same core.
 
 ## Planned rules

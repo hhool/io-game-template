@@ -27,6 +27,10 @@ npm run dev
 浏览器打开：
 - http://localhost:6868/
 
+端口说明：
+- 如果 `6868` 端口被占用，服务端会输出清晰错误并退出。
+- 如需自动尝试后续端口（6868..6887），使用 `AUTO_PORT=1`（例如：`AUTO_PORT=1 npm run dev`）。
+
 ## 手机端浏览器测试（局域网 LAN）
 只要手机和 Mac 在同一个 Wi‑Fi 下，就可以用手机浏览器直接打开进行测试。
 
@@ -146,6 +150,32 @@ URL 传参快速测试（不持久化）：
 - `bots=1|true|yes|on`（开启），`bots=0|false|no|off`（关闭）
 - `botCount=<0-30>`（也兼容 `botsCount` / `bots_count`）
 
+## 规则选择（`rulesId`）
+服务端支持在不同房间运行不同规则集（ruleset）。
+
+当前支持：
+- `agar-lite`（默认）— 当前可玩的原型玩法
+- `agar-advanced` — 目前仍复用同一核心，但使用不同默认值/可调参数
+- `paper-lite`（早期占位）— 简单移动 + 赛道数据（目前仍复用“圆形玩家”渲染）
+
+通过 URL 参数选择规则：
+- `/?rules=agar-lite`
+- `/?rules=agar-advanced`
+- `/?rules=paper-lite`
+
+通过 UI 选择规则：
+- 登录界面提供 **Rules** 下拉框。
+- 选择会持久化到 localStorage，并同步到 URL 的 `?rules=...`，方便分享链接。
+- 下拉框选项来自服务端接口 `GET /rules`。
+
+说明：
+- 快速匹配会按 `rulesId` 分组（只会加入同规则的房间）。
+- `state` 快照里会带 `rulesId`，方便后续前端按规则分支渲染。
+
+`agar-advanced` 可调参数（服务端环境变量）：
+- `AGAR_ADV_BORDER_DEATH`, `AGAR_ADV_PELLET_COUNT`, `AGAR_ADV_PELLET_GROWTH_MUL`
+- 详细见 `examples/agar-advanced/`。
+
 ## 手感（速度/阻尼）配置
 服务端移动手感可通过 `server/public/config.json` 的 `movement` 配置（默认值就是当前代码数值）：
 - `movement.baseSpeed`: 数字（默认 `192`）
@@ -196,17 +226,17 @@ URL 传参快速测试（不持久化）：
 - 断线后服务端保留 session 一段时间（默认 5 分钟），重连会恢复到原房间与模式（play/spectate）。
 
 ### 房间/匹配/观战
-- `mm:join { mode: 'play'|'spectate' }`
+- `mm:join { mode: 'play'|'spectate', rulesId?: string }`
 	- `play`: 快速匹配到一个活跃房间（或创建新房间）
 	- `spectate`: 创建/进入一个房间但以观战身份加入
-- `room:join { roomId, mode }`: 指定加入房间
+- `room:join { roomId, mode, rulesId?: string }`: 指定加入房间
 - `room:leave`: 离开当前房间
 - 服务器事件：
 	- `room:joined { room, mode }`
 	- `room:left`
 
 ### 状态与排行榜
-- `state { roomId, ts, players, pellets }`: 房间状态快照
+- `state { roomId, rulesId, ts, players, pellets, ... }`: 房间状态快照
 - `leaderboard { roomId, top: [{id, score, color, r}] }`: 房间 Top10
 
 ### 原生 WebSocket

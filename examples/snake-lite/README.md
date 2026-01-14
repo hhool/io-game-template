@@ -1,5 +1,7 @@
 # snake-lite (planned)
 
+English | [中文](README.zh.md)
+
 Goal: a Snake.io-like ruleset built on top of the same core.
 
 Planned rules:

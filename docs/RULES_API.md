@@ -1,4 +1,4 @@
-# Rules API (draft)
+# Rules API (draft → partially implemented)
 
 This doc defines a practical rules interface so the same networking/rooms/input stack can power multiple IO game variants (Agar/Snake/Slither/Paper/Pacer).
 
@@ -87,11 +87,38 @@ Per-player metadata:
 
 Current core is in `server/src/*`.
 
-Planned integration steps:
-1. Add `rulesId` to room creation.
-2. `createGame()` owns a rules instance + a world.
-3. `RoomManager.setInput()` calls `game.setInput()`.
-4. Broadcast uses `game.getSnapshot()`.
+Status (as of 2026-01-14): `rulesId` is wired end-to-end.
+
+Implemented integration steps:
+1. ✅ Add `rulesId` to room creation / matchmaking.
+2. ✅ `createGame()` selects a ruleset and owns a world-state.
+3. ✅ Input path goes through the per-room game/world.
+4. ✅ Broadcast uses `game.getSnapshot()` (snapshots include `rulesId`).
+
+Where in code:
+- Rules selection/adapter: `server/src/rules/registry.js`
+- Game wrapper: `server/src/game.js`
+- Room + matchmaking: `server/src/rooms.js`
+- Join payload: `server/index.js` (`mm:join` / `room:join` accept `rulesId`)
+
+## Selecting a ruleset
+
+### URL param (current client)
+The default client reads `rules` / `rulesId` from the URL and forwards it on join:
+
+- `/?rules=agar-lite` (default)
+- `/?rules=paper-lite`
+
+### Join payload (Socket.IO)
+You can also specify it directly:
+
+```js
+socket.emit('mm:join', { mode: 'play', rulesId: 'paper-lite' })
+```
+
+Notes:
+- Quick match groups rooms by `rulesId` (it won’t mix different rulesets).
+- For now, the framework keeps backward compatibility by adapting rules modules to the existing world-state API.
 
 ## Notes by game type
 
@@ -118,5 +145,10 @@ Planned integration steps:
 
 ## Backwards compatibility
 
-Until the rules API is wired in, the existing prototype remains the default behavior.
-This doc and `server/src/rules/*` are scaffolding for the next refactor.
+The existing Agar-like prototype remains the default behavior (`agar-lite`).
+
+Current implementation uses an adapter layer so existing core code can keep calling:
+`addPlayer/removePlayer/setPlayerInput/step/getSnapshot`.
+
+As more rulesets land, the plan is to converge on the pure rules interface defined above
+(and let `createGame()` directly wrap rules/world without the legacy adapter shape).

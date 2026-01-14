@@ -27,6 +27,10 @@ npm run dev
 Open:
 - http://localhost:6868/
 
+Port notes:
+- If `6868` is already in use, the server exits with a clear error.
+- To auto-try the next ports (6868..6887), run with `AUTO_PORT=1` (example: `AUTO_PORT=1 npm run dev`).
+
 ## Test on phone (LAN)
 If your phone and Mac are on the same Wi‑Fi, you can test the game from the phone browser.
 
@@ -146,6 +150,32 @@ Supported bot URL params:
 - `bots=1|true|yes|on` (enable), `bots=0|false|no|off` (disable)
 - `botCount=<0-30>` (also accepts `botsCount` / `bots_count`)
 
+## Rules selection (`rulesId`)
+The server can run different game rulesets per-room.
+
+Currently supported:
+- `agar-lite` (default) — current playable prototype
+- `agar-advanced` — same core today, but with different defaults/tuning knobs
+- `paper-lite` (early placeholder) — simple movement + track data (still rendered as circles for now)
+
+Select rules via URL param:
+- `/?rules=agar-lite`
+- `/?rules=agar-advanced`
+- `/?rules=paper-lite`
+
+Select rules via UI:
+- The login screen includes a **Rules** dropdown.
+- The selection is persisted in localStorage and mirrored into the URL as `?rules=...`.
+- The dropdown options are populated from the server endpoint `GET /rules`.
+
+Notes:
+- Matchmaking groups rooms by `rulesId` (quick match only joins rooms with the same rules).
+- Snapshots include a `rulesId` field so clients can branch rendering later.
+
+`agar-advanced` tuning (server env):
+- `AGAR_ADV_BORDER_DEATH`, `AGAR_ADV_PELLET_COUNT`, `AGAR_ADV_PELLET_GROWTH_MUL`
+- See `examples/agar-advanced/` for details.
+
 ## Roadmap
 Maintain this list by checking items off as you ship.
 
@@ -190,17 +220,17 @@ Optional env overrides:
 - Server keeps sessions for a while (default: 5 minutes). Reconnect restores room + mode (play/spectate).
 
 ### Rooms / matchmaking / spectate
-- `mm:join { mode: 'play'|'spectate' }`
+- `mm:join { mode: 'play'|'spectate', rulesId?: string }`
   - `play`: quick match an active room (or create a new one)
   - `spectate`: create/join a room as spectator
-- `room:join { roomId, mode }`
+- `room:join { roomId, mode, rulesId?: string }`
 - `room:leave`
 - Server events:
   - `room:joined { room, mode }`
   - `room:left`
 
 ### State & leaderboard
-- `state { roomId, ts, players, pellets }`
+- `state { roomId, rulesId, ts, players, pellets, ... }`
 - `leaderboard { roomId, top: [{id, score, color, r}] }`
 
 ### Native WebSocket details

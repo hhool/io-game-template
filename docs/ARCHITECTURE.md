@@ -13,6 +13,7 @@ Core lives in:
 - `server/src/rooms.js`: sessions, rooms, matchmaking, bot lifecycle.
 - `server/src/game.js`: per-room tick/broadcast loop wrapper.
 - `server/src/state.js`: authoritative world simulation (movement, pellets, bots AI).
+- `server/src/rules/*`: rulesets + registry (`rulesId` selects the rules per room).
 
 ### Client modules
 - `server/public/client.js`: input model (mouse/touch/keyboard), rendering, minimap, bots toggle, config merge (defaults + config.json + runtime overrides + URL overrides).
@@ -26,4 +27,9 @@ As features diverge (Agar/Snake/Paper rules), move the game rules behind a "rule
 
 ## Rules API (next refactor)
 
-See [RULES_API.md](RULES_API.md) for the draft interface that will allow swapping game rules (Agar/Snake/Slither/Paper/Pacer) on top of the same core.
+See [RULES_API.md](RULES_API.md) for the draft interface that allows swapping game rules (Agar/Snake/Slither/Paper/Pacer) on top of the same core.
+
+Current status:
+- `rulesId` is wired end-to-end (client -> server join -> room -> game -> snapshot).
+- Default rules: `agar-lite` (existing prototype)
+- Optional rules: `paper-lite` (placeholder ruleset)
