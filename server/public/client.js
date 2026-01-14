@@ -10,6 +10,10 @@ const meEl = document.getElementById("me");
 const roomEl = document.getElementById("room");
 const fpsEl = document.getElementById("fps");
 const lbEl = document.getElementById("lb");
+const playersBoardEl = document.getElementById("playersBoard");
+const playersTitleEl = document.getElementById("playersTitle");
+const playersEl = document.getElementById("players");
+const btnPlayersToggle = document.getElementById("btnPlayersToggle");
 
 const btnQuick = document.getElementById("btnQuick");
 const btnSpectate = document.getElementById("btnSpectate");
@@ -360,6 +364,7 @@ const I18N = {
     touchGuide: "Drag to move",
     touchGuidePoint: "Hold to steer",
     leaderboard: "Leaderboard",
+    players: "Players",
     connecting: "connecting…",
     connected: "connected",
     disconnected: "disconnected",
@@ -387,6 +392,7 @@ const I18N = {
     touchGuide: "Тяните для движения",
     touchGuidePoint: "Удерживайте для управления",
     leaderboard: "Таблица лидеров",
+    players: "Игроки",
     connecting: "подключение…",
     connected: "подключено",
     disconnected: "отключено",
@@ -414,6 +420,7 @@ const I18N = {
     touchGuide: "Glissez pour bouger",
     touchGuidePoint: "Maintenez pour diriger",
     leaderboard: "Classement",
+    players: "Joueurs",
     connecting: "connexion…",
     connected: "connecté",
     disconnected: "déconnecté",
@@ -441,6 +448,7 @@ const I18N = {
     touchGuide: "拖动控制方向",
     touchGuidePoint: "按住控制方向",
     leaderboard: "排行榜",
+    players: "玩家",
     connecting: "连接中…",
     connected: "已连接",
     disconnected: "已断开",
@@ -468,6 +476,7 @@ const I18N = {
     touchGuide: "Ziehen zum Bewegen",
     touchGuidePoint: "Halten zum Steuern",
     leaderboard: "Rangliste",
+    players: "Spieler",
     connecting: "verbinde…",
     connected: "verbunden",
     disconnected: "getrennt",
@@ -495,6 +504,7 @@ const I18N = {
     touchGuide: "اسحب للحركة",
     touchGuidePoint: "اضغط للتوجيه",
     leaderboard: "لوحة الصدارة",
+    players: "اللاعبون",
     connecting: "جارٍ الاتصال…",
     connected: "متصل",
     disconnected: "غير متصل",
@@ -1034,9 +1044,51 @@ function applyLang() {
   else if (inputModel.useMouse) hintEl.textContent = t("hintMouse") || t("hint");
   else hintEl.textContent = t("hint");
   lbTitleEl.textContent = t("leaderboard");
+  if (playersTitleEl) playersTitleEl.textContent = t("players");
 
   recentTitleEl.textContent = t("recent");
   renderStats();
+  renderPlayersList(true);
+}
+
+function setPlayersCollapsed(collapsed) {
+  if (!playersBoardEl || !btnPlayersToggle) return;
+  const c = Boolean(collapsed);
+  playersBoardEl.classList.toggle("collapsed", c);
+  btnPlayersToggle.setAttribute("aria-pressed", c ? "true" : "false");
+  btnPlayersToggle.textContent = c ? "Show" : "Hide";
+}
+
+if (btnPlayersToggle) {
+  btnPlayersToggle.addEventListener("click", () => {
+    const collapsed = playersBoardEl?.classList?.contains("collapsed");
+    setPlayersCollapsed(!collapsed);
+  });
+}
+
+let lastPlayersRenderAt = 0;
+function renderPlayersList(force) {
+  if (!playersEl || !playersTitleEl) return;
+  const now = Date.now();
+  if (!force && now - lastPlayersRenderAt < 120) return;
+  lastPlayersRenderAt = now;
+
+  const list = Array.isArray(lastSnapshot?.players) ? lastSnapshot.players.slice() : [];
+  list.sort((a, b) => (Number(b?.score) || 0) - (Number(a?.score) || 0));
+
+  const baseTitle = t("players");
+  playersTitleEl.textContent = `${baseTitle} (${list.length})`;
+
+  playersEl.innerHTML = "";
+  for (const p of list) {
+    const li = document.createElement("li");
+    const name = typeof p?.name === "string" && p.name.trim() ? p.name.trim() : String(p?.id || "").slice(0, 6);
+    const score = Number.isFinite(p?.score) ? p.score : 0;
+    const botTag = p?.isBot ? " [bot]" : "";
+    li.textContent = `${name}${botTag}  score=${score}`;
+    if (p?.id && myId && p.id === myId) li.classList.add("me");
+    playersEl.appendChild(li);
+  }
 }
 
 function setTouchControlsEnabled(enabled) {
@@ -1741,6 +1793,8 @@ socket.on("disconnect", () => {
   renderRoomLabel();
   btnLeave.disabled = true;
   setRulesDisabled(false);
+  if (playersEl) playersEl.innerHTML = "";
+  if (playersTitleEl) playersTitleEl.textContent = t("players");
 });
 
 socket.on("connect_error", (err) => {
@@ -1755,6 +1809,8 @@ socket.on("connect_error", (err) => {
   renderRoomLabel();
   btnLeave.disabled = true;
   setRulesDisabled(false);
+  if (playersEl) playersEl.innerHTML = "";
+  if (playersTitleEl) playersTitleEl.textContent = t("players");
 });
 
 socket.on("auth", (payload) => {
@@ -1817,6 +1873,8 @@ socket.on("game:over", (payload = {}) => {
   pendingRulesId = null;
   renderRoomLabel();
   lbEl.innerHTML = "";
+  if (playersEl) playersEl.innerHTML = "";
+  if (playersTitleEl) playersTitleEl.textContent = t("players");
   btnLeave.disabled = true;
   setRulesDisabled(false);
 
@@ -1866,6 +1924,8 @@ socket.on("room:left", () => {
   renderRoomLabel();
   btnLeave.disabled = true;
   lbEl.innerHTML = "";
+  if (playersEl) playersEl.innerHTML = "";
+  if (playersTitleEl) playersTitleEl.textContent = t("players");
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
   setRulesDisabled(false);
 });
@@ -1879,6 +1939,7 @@ socket.on("state", (snap) => {
   prevSnapshot = lastSnapshot;
   lastSnapshot = snap;
   renderDebugPanel(false);
+  renderPlayersList(false);
 });
 
 socket.on("leaderboard", (payload) => {

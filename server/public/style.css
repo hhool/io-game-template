@@ -189,3 +189,20 @@ html[dir="rtl"] #history, html[dir="rtl"] .board ol{margin-left:0;margin-right:1
 .boardTitle{font-size:12px;color:var(--muted);font-weight:800;letter-spacing:0.2px}
 .board ol{margin:6px 0 0 18px;padding:0;max-height:140px;overflow:auto}
 .board li{font-size:12px;color:var(--text);opacity:0.9;margin:2px 0}
+
+.boardTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.miniBtn{
+  background:rgba(255,255,255,0.08);
+  color:var(--text);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:10px;
+  padding:4px 8px;
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+}
+.miniBtn:hover{border-color:rgba(79,195,247,0.55)}
+
+.boardPlayers ol{max-height:180px}
+.boardPlayers.collapsed ol{display:none}
+.boardPlayers li.me{color:var(--accent);opacity:1;font-weight:900}
