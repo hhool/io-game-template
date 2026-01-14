@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d");
 
 const hudEl = document.getElementById("hud");
 const loginEl = document.getElementById("login");
+const debugPanelEl = document.getElementById("debugPanel");
 
 const statusEl = document.getElementById("status");
 const meEl = document.getElementById("me");
@@ -16,18 +17,133 @@ const btnLeave = document.getElementById("btnLeave");
 
 const langSel = document.getElementById("lang");
 const nickInput = document.getElementById("nick");
+const rulesSel = document.getElementById("rules");
 const btnLogin = document.getElementById("btnLogin");
 const loginMsg = document.getElementById("loginMsg");
 const bestLineEl = document.getElementById("bestLine");
 const historyEl = document.getElementById("history");
 
+// --- Custom dropdowns (desktop/device-emulation), backed by native <select> ---
+const customDropdowns = new Map();
+
+function setupCustomDropdownForSelect(selectEl) {
+  if (!selectEl) return null;
+  // Avoid relying on HTMLSelectElement instanceof checks (can be finicky across WebViews/realms).
+  if (String(selectEl.tagName || "").toUpperCase() !== "SELECT") return null;
+  const wrap = selectEl.closest(".dropdownWrap");
+  if (!wrap) return null;
+  const btn = wrap.querySelector(".ddBtn");
+  const list = wrap.querySelector(".ddList");
+  if (!btn || !list) return null;
+
+  const close = () => {
+    wrap.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+  };
+
+  const open = () => {
+    if (btn.disabled) return;
+    wrap.classList.add("open");
+    btn.setAttribute("aria-expanded", "true");
+    const first = list.querySelector(".ddItem");
+    if (first) first.focus?.();
+  };
+
+  const toggle = () => {
+    if (wrap.classList.contains("open")) close();
+    else open();
+  };
+
+  const update = () => {
+    const opt = selectEl.selectedOptions && selectEl.selectedOptions[0] ? selectEl.selectedOptions[0] : selectEl.options[selectEl.selectedIndex];
+    btn.textContent = opt ? opt.textContent : "";
+    btn.disabled = Boolean(selectEl.disabled);
+    const selectedValue = selectEl.value;
+    for (const item of Array.from(list.querySelectorAll(".ddItem"))) {
+      const isSel = item.getAttribute("data-value") === selectedValue;
+      item.setAttribute("aria-selected", isSel ? "true" : "false");
+    }
+  };
+
+  const rebuild = () => {
+    list.innerHTML = "";
+    for (const opt of Array.from(selectEl.options || [])) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "ddItem";
+      item.setAttribute("role", "option");
+      item.setAttribute("data-value", opt.value);
+      item.textContent = opt.textContent;
+      item.addEventListener("click", () => {
+        if (selectEl.disabled) return;
+        selectEl.value = opt.value;
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        update();
+        close();
+        btn.focus?.();
+      });
+      list.appendChild(item);
+    }
+    update();
+  };
+
+  btn.addEventListener("click", toggle);
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    } else if (e.key === "Escape") {
+      close();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.classList.contains("open")) return;
+    if (wrap.contains(e.target)) return;
+    close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!wrap.classList.contains("open")) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      btn.focus?.();
+    }
+  });
+
+  // Keep in sync when code updates options/disabled dynamically.
+  const mo = new MutationObserver(() => {
+    rebuild();
+  });
+  mo.observe(selectEl, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+
+  selectEl.addEventListener("change", () => update());
+
+  const api = { selectEl, wrap, btn, list, rebuild, update, close, open };
+  customDropdowns.set(selectEl.id, api);
+  rebuild();
+  return api;
+}
+
+function updateCustomDropdown(selectId) {
+  customDropdowns.get(selectId)?.update?.();
+}
+
+function rebuildCustomDropdown(selectId) {
+  customDropdowns.get(selectId)?.rebuild?.();
+}
+
 const loginTitleEl = document.getElementById("loginTitle");
 const labelLangEl = document.getElementById("labelLang");
 const labelNickEl = document.getElementById("labelNick");
+const labelRulesEl = document.getElementById("labelRules");
 const recentTitleEl = document.getElementById("recentTitle");
 const hudTitleEl = document.getElementById("hudTitle");
 const lbTitleEl = document.getElementById("lbTitle");
 const hintEl = document.getElementById("hint");
+
+setupCustomDropdownForSelect(langSel);
+setupCustomDropdownForSelect(rulesSel);
 
 function resize() {
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -40,6 +156,7 @@ resize();
 
 const STORAGE_TOKEN = "1wlgame_token";
 const STORAGE_PROFILE = "1wlgame_profile_v1";
+const STORAGE_RULES = "1wlgame_rulesId_v1";
 
 function storageGet(key) {
   try {
@@ -82,11 +199,152 @@ function sanitizeNick(nick) {
   return nick.replace(/[\r\n\t]/g, " ").trim().slice(0, 16);
 }
 
+function normalizeRulesId(v) {
+  if (typeof v !== "string") return null;
+  let id = v.trim().toLowerCase();
+  if (!id) return null;
+
+  // Accept any safe rules id so new rulesets work without a client release.
+  // Keep this conservative to avoid weird URL/localStorage injection.
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return null;
+  return id;
+}
+
+function isTextInputFocused() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+
+function shouldEnableDebugFromUrl() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const v = q.get("debug") ?? q.get("dbg");
+    return v === "1" || v === "true" || v === "yes";
+  } catch {
+    return false;
+  }
+}
+
+let debugEnabled = shouldEnableDebugFromUrl();
+let lastRulesOkAt = 0;
+let lastRulesOk = null;
+let lastDebugRenderAt = 0;
+
+let serverRulesCatalog = null;
+let serverRulesCatalogAt = 0;
+
+function setDebugEnabled(enabled) {
+  debugEnabled = Boolean(enabled);
+  if (!debugPanelEl) return;
+  debugPanelEl.classList.toggle("hidden", !debugEnabled);
+}
+
+function msAgo(ts) {
+  if (!ts) return "never";
+  const d = Date.now() - ts;
+  if (d < 0) return "0ms";
+  if (d < 1000) return `${d}ms`;
+  if (d < 60_000) return `${(d / 1000).toFixed(1)}s`;
+  return `${Math.round(d / 1000)}s`;
+}
+
+function renderDebugPanel(force) {
+  if (!debugEnabled) return;
+  if (!debugPanelEl) return;
+  const now = Date.now();
+  if (!force && now - lastDebugRenderAt < 200) return;
+  lastDebugRenderAt = now;
+
+  const s = lastSnapshot || {};
+  const pellets = Array.isArray(s.pellets) ? s.pellets.length : 0;
+  const players = Array.isArray(s.players) ? s.players.length : 0;
+  const me = (s.players || []).find((p) => p.id === myId) || null;
+  const rc = currentRulesId ? rulesCfgFor(currentRulesId) : null;
+  const rcAgar = rc?.agar && typeof rc.agar === "object" ? rc.agar : null;
+
+  const selectedRulesId = normalizeRulesId(rulesSel?.value);
+  const activeRulesId = normalizeRulesId(currentRulesId);
+  const knownRules = Array.isArray(serverRulesCatalog)
+    ? serverRulesCatalog
+        .map((r) => ({
+          id: normalizeRulesId(r?.id),
+          label: typeof r?.label === "string" ? r.label : null,
+        }))
+        .filter((r) => r.id)
+    : [];
+  // Fallback to whatever is currently in the <select>.
+  if (!knownRules.length && rulesSel) {
+    for (const opt of Array.from(rulesSel.options || [])) {
+      const id = normalizeRulesId(opt?.value);
+      if (!id) continue;
+      knownRules.push({ id, label: typeof opt.textContent === "string" ? opt.textContent : null });
+    }
+  }
+
+  const lines = [];
+  lines.push("Debug (toggle: D, url: ?debug=1)");
+  lines.push(`backend=${backendUrl}`);
+  lines.push(`mode=${currentMode ?? "-"} room=${currentRoomId ?? "-"}`);
+  lines.push(`rules=${currentRulesId ?? "-"} pending=${pendingRulesId ?? "-"}`);
+  lines.push(`snap.ts=${s.ts ?? "-"} (${msAgo(s.ts)} ago)`);
+  lines.push(`players=${players} pellets=${pellets}`);
+  if (me) lines.push(`me: x=${me.x?.toFixed?.(1) ?? me.x} y=${me.y?.toFixed?.(1) ?? me.y} r=${me.r?.toFixed?.(1) ?? me.r} score=${me.score ?? "-"}`);
+
+  if (pellets && Array.isArray(s.pellets)) {
+    let invalid = 0;
+    let inView = 0;
+    const camTargetX = me ? me.x : world.width / 2;
+    const camTargetY = me ? me.y : world.height / 2;
+    const camX = camTargetX - window.innerWidth / 2;
+    const camY = camTargetY - window.innerHeight / 2;
+
+    for (const pel of s.pellets) {
+      const x = Number(pel?.x);
+      const y = Number(pel?.y);
+      const r = Number(pel?.r);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) {
+        invalid++;
+        continue;
+      }
+      if (x >= camX && x <= camX + window.innerWidth && y >= camY && y <= camY + window.innerHeight) inView++;
+    }
+
+    const p0 = s.pellets[0];
+    if (p0) lines.push(`pel0: x=${p0.x} y=${p0.y} r=${p0.r}`);
+    lines.push(`pellets in view≈${inView} invalid=${invalid}`);
+  }
+  lines.push(`rules:setConfig lastSent=${msAgo(lastRulesSentAt)} ago jsonLen=${lastRulesSent?.json?.length ?? 0}`);
+  lines.push(`rules:ok last=${msAgo(lastRulesOkAt)} ago`);
+
+  if (knownRules.length) {
+    lines.push("");
+    lines.push(`Rules (server=${msAgo(serverRulesCatalogAt)} ago):`);
+    const max = 24;
+    for (const r of knownRules.slice(0, max)) {
+      const isSelected = selectedRulesId && r.id === selectedRulesId;
+      const isActive = activeRulesId && r.id === activeRulesId;
+      const mark = `${isActive ? ">" : " "}${isSelected ? "*" : " "}`; // > active, * selected
+      const label = r.label && r.label !== r.id ? ` (${r.label})` : "";
+      lines.push(`${mark} ${r.id}${label}`);
+    }
+    if (knownRules.length > max) lines.push(`  … +${knownRules.length - max} more`);
+    lines.push("  legend: > active in-room, * selected in dropdown");
+  }
+
+  if (rcAgar) lines.push(`agar cfg: ${JSON.stringify(rcAgar)}`);
+  if (lastRulesOk) lines.push(`last rules:ok: ${JSON.stringify(lastRulesOk)}`);
+
+  debugPanelEl.textContent = lines.join("\n");
+}
+
 const I18N = {
   en: {
     loginTitle: "1wlgame",
     labelLang: "Language",
     labelNick: "Nickname",
+    labelRules: "Rules",
     nickPlaceholder: "Enter your nickname",
     enter: "Enter",
     best: "Best score",
@@ -113,6 +371,7 @@ const I18N = {
     loginTitle: "1wlgame",
     labelLang: "Язык",
     labelNick: "Ник",
+    labelRules: "Правила",
     nickPlaceholder: "Введите ник",
     enter: "Войти",
     best: "Лучший счёт",
@@ -139,6 +398,7 @@ const I18N = {
     loginTitle: "1wlgame",
     labelLang: "Langue",
     labelNick: "Pseudo",
+    labelRules: "Règles",
     nickPlaceholder: "Entrez votre pseudo",
     enter: "Entrer",
     best: "Meilleur score",
@@ -165,6 +425,7 @@ const I18N = {
     loginTitle: "1wlgame",
     labelLang: "语言",
     labelNick: "昵称",
+    labelRules: "规则",
     nickPlaceholder: "请输入昵称",
     enter: "进入",
     best: "最佳成绩",
@@ -191,6 +452,7 @@ const I18N = {
     loginTitle: "1wlgame",
     labelLang: "Sprache",
     labelNick: "Nickname",
+    labelRules: "Regeln",
     nickPlaceholder: "Nickname eingeben",
     enter: "Start",
     best: "Bester Score",
@@ -217,6 +479,7 @@ const I18N = {
     loginTitle: "1wlgame",
     labelLang: "اللغة",
     labelNick: "الاسم",
+    labelRules: "القواعد",
     nickPlaceholder: "أدخل الاسم",
     enter: "دخول",
     best: "أفضل نتيجة",
@@ -676,6 +939,9 @@ function applyConfig(nextCfg, opts) {
 
   // If we're already in a room, sync bots config to server.
   syncBotsConfigToServer(false);
+
+  // If we're already in a room, sync rules tuning to server.
+  syncRulesConfigToServer(false);
 }
 
 function botsCfg() {
@@ -683,6 +949,22 @@ function botsCfg() {
   const enabled = Boolean(b.enabled);
   const count = Number.isFinite(b.count) ? Math.max(0, Math.min(30, Math.floor(b.count))) : defaultConfig.bots.count;
   return { enabled, count };
+}
+
+function safeJsonClone(v) {
+  try {
+    return v == null ? null : JSON.parse(JSON.stringify(v));
+  } catch {
+    return null;
+  }
+}
+
+function rulesCfgFor(rulesId) {
+  const rid = normalizeRulesId(rulesId);
+  if (!rid) return null;
+  const entry = config?.rules?.[rid];
+  if (!entry || typeof entry !== "object") return null;
+  return safeJsonClone(entry);
 }
 
 let lastBotsSent = { enabled: null, count: null, roomId: null };
@@ -704,6 +986,29 @@ function syncBotsConfigToServer(force) {
   socket.emit("bots:set", { enabled: b.enabled, count: b.count });
 }
 
+let lastRulesSent = { roomId: null, rulesId: null, json: null };
+let lastRulesSentAt = 0;
+function syncRulesConfigToServer(force) {
+  if (!socket?.connected) return;
+  if (currentMode !== "play") return;
+  if (!currentRoomId) return;
+  if (!currentRulesId) return;
+
+  const rc = rulesCfgFor(currentRulesId);
+  if (!rc) return;
+  const json = JSON.stringify(rc);
+
+  const now = Date.now();
+  if (!force) {
+    if (lastRulesSent.roomId === currentRoomId && lastRulesSent.rulesId === currentRulesId && lastRulesSent.json === json) return;
+    if (now - lastRulesSentAt < 350) return;
+  }
+
+  lastRulesSent = { roomId: currentRoomId, rulesId: currentRulesId, json };
+  lastRulesSentAt = now;
+  socket.emit("rules:setConfig", { rulesId: currentRulesId, rulesConfig: rc });
+}
+
 function t(key) {
   const dict = I18N[lang] || I18N.en;
   return dict[key] ?? I18N.en[key] ?? key;
@@ -715,6 +1020,7 @@ function applyLang() {
   loginTitleEl.textContent = t("loginTitle");
   labelLangEl.textContent = t("labelLang");
   labelNickEl.textContent = t("labelNick");
+  if (labelRulesEl) labelRulesEl.textContent = t("labelRules");
   nickInput.placeholder = t("nickPlaceholder");
   btnLogin.textContent = t("enter");
 
@@ -844,6 +1150,7 @@ function showLogin(message = "") {
   btnQuick.disabled = true;
   btnSpectate.disabled = true;
   btnLeave.disabled = true;
+  setRulesDisabled(false);
   autoQuickRequested = false;
   joinInFlight = false;
 }
@@ -855,6 +1162,118 @@ function showGame() {
   btnSpectate.disabled = false;
 }
 
+function setRulesDisabled(disabled) {
+  if (!rulesSel) return;
+  // Never disable rules selection on the login screen.
+  // This avoids Android Chrome oddities where the control can get stuck disabled when opened via URL params.
+  const inGame = loginEl?.classList?.contains("hidden");
+  rulesSel.disabled = Boolean(disabled) && Boolean(inGame);
+  updateCustomDropdown("rules");
+}
+
+function getRulesIdFromUrl() {
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    const v = qs.get("rules") || qs.get("rulesId") || "";
+    const id = normalizeRulesId(v);
+    if (id) return id;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function getRulesIdFromUrlRaw() {
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    return qs.get("rules") || qs.get("rulesId") || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRulesIdSelected() {
+  const fromSel = normalizeRulesId(rulesSel?.value);
+  if (fromSel) return fromSel;
+  const fromUrl = getRulesIdFromUrl();
+  if (fromUrl) return fromUrl;
+  const fromStore = normalizeRulesId(storageGet(STORAGE_RULES));
+  if (fromStore) return fromStore;
+  return "agar-lite";
+}
+
+function setRulesSelection(rulesId, { persist = true, updateUrl = true } = {}) {
+  const normalized = normalizeRulesId(rulesId) || "agar-lite";
+  if (rulesSel) rulesSel.value = normalized;
+  updateCustomDropdown("rules");
+  if (persist) storageSet(STORAGE_RULES, normalized);
+  if (updateUrl) {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("rules", normalized);
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function applyRulesOptions(rules) {
+  if (!rulesSel) return;
+  if (!Array.isArray(rules) || !rules.length) return;
+
+  const keep = getRulesIdSelected();
+  const opts = rules
+    .map((r) => ({ id: normalizeRulesId(r?.id), label: typeof r?.label === "string" ? r.label : String(r?.id ?? "") }))
+    .filter((r) => r.id);
+
+  if (!opts.length) return;
+
+  rulesSel.innerHTML = "";
+  for (const r of opts) {
+    const opt = document.createElement("option");
+    opt.value = r.id;
+    opt.textContent = r.label || r.id;
+    rulesSel.appendChild(opt);
+  }
+  // Restore selection after replacing options
+  setRulesSelection(keep, { persist: true, updateUrl: true });
+  rebuildCustomDropdown("rules");
+}
+
+async function hydrateRulesOptionsFromServer() {
+  if (!rulesSel) return;
+  try {
+    const r = await fetch("/rules", { cache: "no-store" });
+    const j = r.ok ? await r.json() : null;
+    if (j?.rules) {
+      serverRulesCatalog = j.rules;
+      serverRulesCatalogAt = Date.now();
+      applyRulesOptions(j.rules);
+      renderDebugPanel(true);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// Initialize rules selector from URL/storage and keep it shareable.
+if (rulesSel) {
+  const fromUrlRaw = getRulesIdFromUrlRaw();
+  const fromUrl = normalizeRulesId(fromUrlRaw);
+  const fromStore = storageGet(STORAGE_RULES);
+  setRulesSelection(fromUrl || fromStore || "agar-lite", { persist: true, updateUrl: Boolean(fromUrl) });
+  if (!fromUrl) setRulesSelection(rulesSel.value, { persist: true, updateUrl: true });
+  rulesSel.addEventListener("change", () => {
+    const inGame = loginEl?.classList?.contains("hidden");
+    if (inGame && (currentRoomId || joinInFlight)) return;
+    setRulesSelection(rulesSel.value, { persist: true, updateUrl: true });
+  });
+
+  // Populate options from server registry
+  hydrateRulesOptionsFromServer();
+}
+
 function tryAutoQuickMatch() {
   if (!autoQuickRequested) return;
   if (!socket.connected) return;
@@ -864,10 +1283,13 @@ function tryAutoQuickMatch() {
   if (joinInFlight) return;
   autoQuickRequested = false;
   joinInFlight = true;
-  socket.emit("mm:join", { mode: "play" });
+  pendingRulesId = getRulesIdSelected();
+  setRulesDisabled(true);
+  socket.emit("mm:join", { mode: "play", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
 }
 
 langSel.value = lang;
+updateCustomDropdown("lang");
 langSel.addEventListener("change", () => {
   const next = langSel.value;
   lang = I18N[next] ? next : "en";
@@ -919,9 +1341,21 @@ socket = io(backendUrl, {
 let myId = null;
 let currentRoomId = null;
 let currentMode = null;
+let currentRulesId = null;
+let pendingRulesId = null;
 let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
+
+function renderRoomLabel() {
+  if (!currentRoomId) {
+    roomEl.textContent = "";
+    return;
+  }
+  const bits = [currentMode].filter(Boolean);
+  if (currentRulesId) bits.push(currentRulesId);
+  roomEl.textContent = bits.length ? `room: ${currentRoomId} (${bits.join(", ")})` : `room: ${currentRoomId}`;
+}
 
 const keys = new Set();
 window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
@@ -1299,12 +1733,28 @@ socket.on("connect", () => {
 
 socket.on("disconnect", () => {
   statusEl.textContent = t("disconnected");
+  joinInFlight = false;
+  currentRoomId = null;
+  currentMode = null;
+  currentRulesId = null;
+  pendingRulesId = null;
+  renderRoomLabel();
+  btnLeave.disabled = true;
+  setRulesDisabled(false);
 });
 
 socket.on("connect_error", (err) => {
   const msg = err?.message || String(err);
   statusEl.textContent = `connect_error (${backendUrl}): ${msg}`;
   console.error("[socket] connect_error", err);
+  joinInFlight = false;
+  currentRoomId = null;
+  currentMode = null;
+  currentRulesId = null;
+  pendingRulesId = null;
+  renderRoomLabel();
+  btnLeave.disabled = true;
+  setRulesDisabled(false);
 });
 
 socket.on("auth", (payload) => {
@@ -1363,9 +1813,12 @@ socket.on("game:over", (payload = {}) => {
   // reset in-room UI
   currentRoomId = null;
   currentMode = null;
-  roomEl.textContent = "";
+  currentRulesId = null;
+  pendingRulesId = null;
+  renderRoomLabel();
   lbEl.innerHTML = "";
   btnLeave.disabled = true;
+  setRulesDisabled(false);
 
   // go back to login page
   profileConfirmed = false;
@@ -1377,12 +1830,26 @@ socket.on("room:joined", ({ room, mode }) => {
   joinInFlight = false;
   currentRoomId = room?.id ?? null;
   currentMode = mode;
-  roomEl.textContent = currentRoomId ? `room: ${currentRoomId} (${mode})` : "";
+  currentRulesId = room?.rulesId || pendingRulesId || currentRulesId;
+  pendingRulesId = null;
+  renderRoomLabel();
   btnLeave.disabled = !currentRoomId;
   statusEl.textContent = "in-room";
+  setRulesDisabled(true);
 
   // Apply bots config to this room (dynamic)
   syncBotsConfigToServer(true);
+
+  // Apply rules tuning to this room (dynamic)
+  syncRulesConfigToServer(true);
+});
+
+socket.on("rules:ok", (payload) => {
+  lastRulesOkAt = Date.now();
+  lastRulesOk = payload ?? null;
+  renderDebugPanel(true);
+  // eslint-disable-next-line no-console
+  console.log("[rules:ok]", payload);
 });
 
 socket.on("bots:ok", (payload) => {
@@ -1394,16 +1861,24 @@ socket.on("room:left", () => {
   joinInFlight = false;
   currentRoomId = null;
   currentMode = null;
-  roomEl.textContent = "";
+  currentRulesId = null;
+  pendingRulesId = null;
+  renderRoomLabel();
   btnLeave.disabled = true;
   lbEl.innerHTML = "";
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
+  setRulesDisabled(false);
 });
 
 socket.on("state", (snap) => {
   if (snap?.roomId && currentRoomId && snap.roomId !== currentRoomId) return;
+  if (snap?.rulesId && snap.rulesId !== currentRulesId) {
+    currentRulesId = snap.rulesId;
+    renderRoomLabel();
+  }
   prevSnapshot = lastSnapshot;
   lastSnapshot = snap;
+  renderDebugPanel(false);
 });
 
 socket.on("leaderboard", (payload) => {
@@ -1436,7 +1911,9 @@ btnQuick.addEventListener("click", () => {
   }
   if (currentRoomId || joinInFlight) return;
   joinInFlight = true;
-  socket.emit("mm:join", { mode: "play" });
+  pendingRulesId = getRulesIdSelected();
+  setRulesDisabled(true);
+  socket.emit("mm:join", { mode: "play", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
 });
 
 btnSpectate.addEventListener("click", () => {
@@ -1444,7 +1921,9 @@ btnSpectate.addEventListener("click", () => {
     statusEl.textContent = `${t("notConnected")} (${backendUrl})`;
     return;
   }
-  socket.emit("mm:join", { mode: "spectate" });
+  pendingRulesId = getRulesIdSelected();
+  setRulesDisabled(true);
+  socket.emit("mm:join", { mode: "spectate", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
 });
 
 btnLeave.addEventListener("click", () => {
@@ -1635,11 +2114,41 @@ function frame(now) {
   ctx.strokeRect(0, 0, world.width, world.height);
 
   // pellets
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fillStyle = "rgba(255,183,77,0.95)";
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = 2;
   for (const pel of s1.pellets || []) {
+    const x = Number(pel?.x);
+    const y = Number(pel?.y);
+    const r = Number.isFinite(pel?.r) ? Number(pel.r) : 4;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     ctx.beginPath();
-    ctx.arc(pel.x, pel.y, pel.r, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+  }
+
+  // Debug: highlight pel0 so we can visually confirm pellets render.
+  if (debugEnabled && Array.isArray(s1.pellets) && s1.pellets.length) {
+    const p0 = s1.pellets[0];
+    const x = Number(p0?.x);
+    const y = Number(p0?.y);
+    const r = Number.isFinite(p0?.r) ? Number(p0.r) : 4;
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,0,0,0.85)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(12, r * 2.2), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - 10, y);
+      ctx.lineTo(x + 10, y);
+      ctx.moveTo(x, y - 10);
+      ctx.lineTo(x, y + 10);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   // players
@@ -1694,3 +2203,13 @@ applyLang();
 renderStats();
 showLogin("");
 nickInput.focus();
+
+setDebugEnabled(debugEnabled);
+window.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  if (isTextInputFocused()) return;
+  if (e.key === "d" || e.key === "D") {
+    setDebugEnabled(!debugEnabled);
+    renderDebugPanel(true);
+  }
+});

@@ -13,19 +13,36 @@
 
         <div class="row">
           <label for="lang" id="labelLang">Language</label>
-          <select id="lang">
-            <option value="en">English</option>
-            <option value="ru">Русский</option>
-            <option value="fr">Français</option>
-            <option value="zh">中文</option>
-            <option value="de">Deutsch</option>
-            <option value="ar">العربية</option>
-          </select>
+          <div class="dropdownWrap" data-dropdown="lang">
+            <select id="lang" class="nativeSelect">
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+              <option value="fr">Français</option>
+              <option value="zh">中文</option>
+              <option value="de">Deutsch</option>
+              <option value="ar">العربية</option>
+            </select>
+            <button type="button" class="ddBtn" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="ddList" role="listbox"></div>
+          </div>
         </div>
 
         <div class="row">
           <label for="nick" id="labelNick">Nickname</label>
           <input id="nick" type="text" maxlength="16" autocomplete="nickname" />
+        </div>
+
+        <div class="row">
+          <label for="rules" id="labelRules">Rules</label>
+          <div class="dropdownWrap" data-dropdown="rules">
+            <select id="rules" class="nativeSelect">
+              <option value="agar-lite">agar-lite</option>
+              <option value="agar-advanced">agar-advanced</option>
+              <option value="paper-lite">paper-lite</option>
+            </select>
+            <button type="button" class="ddBtn" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="ddList" role="listbox"></div>
+          </div>
         </div>
 
         <button id="btnLogin" class="primary">Enter</button>
@@ -64,6 +81,8 @@
         <ol id="lb"></ol>
       </div>
     </div>
+
+    <div id="debugPanel" class="debugPanel hidden"></div>
 
     <canvas id="c"></canvas>
 

@@ -12,13 +12,20 @@ import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 
 import { RoomManager } from './src/rooms.js';
+import { listRules, normalizeRulesId } from './src/rules/registry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number.parseInt(process.env.PORT ?? '6868', 10);
+const DEFAULT_PORT = 6868;
+const PORT = Number.parseInt(process.env.PORT ?? String(DEFAULT_PORT), 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const REDIS_URL = process.env.REDIS_URL || '';
+const PORT_FROM_ENV = process.env.PORT != null && process.env.PORT !== '';
+const AUTO_PORT = (() => {
+  const v = String(process.env.AUTO_PORT ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+})();
 
 async function loadPublicConfig() {
   const configPath = path.join(__dirname, 'public', 'config.json');
@@ -73,6 +80,10 @@ app.get('/healthz', (_req, res) => {
   res.json({ ok: true, ts: Date.now() });
 });
 
+app.get('/rules', (_req, res) => {
+  res.json({ ok: true, rules: listRules() });
+});
+
 const server = http.createServer(app);
 
 const io = new SocketIOServer(server, {
@@ -121,6 +132,8 @@ const rooms = new RoomManager({
   emptyRoomTtlMs: 60_000,
   sessionTtlMs: 5 * 60_000
 });
+
+console.log('[startup]', { host: HOST, port: PORT, autoPort: AUTO_PORT });
 
 function sanitizeNick(nick) {
   if (typeof nick !== 'string') return '';
@@ -173,13 +186,18 @@ io.on('connection', (socket) => {
   socket.on('mm:join', (payload = {}) => {
     console.log('[mm:join]', { socketId: socket.id, playerId: session.playerId, payload });
     const mode = payload.mode === 'spectate' ? 'spectate' : 'play';
+    const rulesId = normalizeRulesId(payload.rulesId);
+    const rulesConfig = payload.rulesConfig && typeof payload.rulesConfig === 'object' ? payload.rulesConfig : undefined;
 
     if (mode === 'play' && !session.nick) {
       socket.emit('login:required', { message: 'nickname required' });
       return;
     }
 
-    const room = mode === 'play' ? rooms.quickMatch(session) : rooms.joinRoomAsSpectator(session, rooms.ensureRoom().id);
+    const room =
+      mode === 'play'
+        ? rooms.quickMatch(session, { rulesId, rulesConfig })
+        : rooms.joinRoomAsSpectator(session, rooms.ensureRoom(null, { rulesId, rulesConfig }).id, { rulesId, rulesConfig });
 
     socket.rooms.forEach((r) => {
       if (r !== socket.id) socket.leave(r);
@@ -192,6 +210,8 @@ io.on('connection', (socket) => {
   socket.on('room:join', (payload = {}) => {
     const mode = payload.mode === 'spectate' ? 'spectate' : 'play';
     const targetRoomId = payload.roomId;
+    const rulesId = normalizeRulesId(payload.rulesId);
+    const rulesConfig = payload.rulesConfig && typeof payload.rulesConfig === 'object' ? payload.rulesConfig : undefined;
     if (!targetRoomId) {
       socket.emit('error', { message: 'roomId required' });
       return;
@@ -202,7 +222,10 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const room = mode === 'play' ? rooms.joinRoomAsPlayer(session, targetRoomId) : rooms.joinRoomAsSpectator(session, targetRoomId);
+    const room =
+      mode === 'play'
+        ? rooms.joinRoomAsPlayer(session, targetRoomId, { rulesId, rulesConfig })
+        : rooms.joinRoomAsSpectator(session, targetRoomId, { rulesId, rulesConfig });
 
     socket.rooms.forEach((r) => {
       if (r !== socket.id) socket.leave(r);
@@ -226,6 +249,19 @@ io.on('connection', (socket) => {
     const count = Number.isFinite(payload.count) ? payload.count : undefined;
     const cfg = rooms.setRoomBots(session.roomId, { enabled, count });
     if (cfg) socket.emit('bots:ok', { roomId: session.roomId, ...cfg });
+  });
+
+  // Update server-side rules config for the current room (prototype tuning feature)
+  socket.on('rules:setConfig', (payload = {}) => {
+    if (!session.roomId) return;
+    if (session.mode !== 'play') return;
+    const room = rooms.ensureRoom(session.roomId);
+    if (!room) return;
+    // Keep the room's rulesId authoritative.
+    const rulesConfig = payload.rulesConfig && typeof payload.rulesConfig === 'object' ? payload.rulesConfig : null;
+    if (!rulesConfig) return;
+    rooms.setRoomRulesConfig(session.roomId, rulesConfig);
+    socket.emit('rules:ok', { roomId: session.roomId });
   });
 
   socket.on('input', (input) => {
@@ -326,10 +362,65 @@ setInterval(() => {
   }
 }, Math.floor(1000 / 15));
 
-server.listen(PORT, HOST, () => {
-  const lan = pickLanIPv4();
-  console.log('Express and Socket.IO are listening on', `${HOST}:${PORT}`);
-  console.log('Local:', `http://127.0.0.1:${PORT}/`);
-  if (lan) console.log('LAN (phone):', `http://${lan}:${PORT}/`);
-  console.log('WS endpoint:', `ws://127.0.0.1:${PORT}/ws`);
+function listenOnce(port) {
+  return new Promise((resolve, reject) => {
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve(port);
+    };
+    const cleanup = () => {
+      server.off('error', onError);
+      server.off('listening', onListening);
+    };
+
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, HOST);
+  });
+}
+
+async function start() {
+  // Port-hopping is opt-in via AUTO_PORT=1.
+  const maxAttempts = AUTO_PORT ? 20 : 1;
+  let lastErr = null;
+  for (let i = 0; i < maxAttempts; i++) {
+    const p = PORT + i;
+    try {
+      const boundPort = await listenOnce(p);
+      const lan = pickLanIPv4();
+      console.log('Express and Socket.IO are listening on', `${HOST}:${boundPort}`);
+      console.log('Local:', `http://127.0.0.1:${boundPort}/`);
+      if (lan) console.log('LAN (phone):', `http://${lan}:${boundPort}/`);
+      console.log('WS endpoint:', `ws://127.0.0.1:${boundPort}/ws`);
+      if (AUTO_PORT && boundPort !== PORT) {
+        console.warn(`[warn] Port ${PORT} was busy; using ${boundPort} instead. Set PORT to force a specific port, or disable AUTO_PORT.`);
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (err?.code === 'EADDRINUSE' && AUTO_PORT) {
+        console.warn(`[warn] Port ${p} is in use; trying ${p + 1}...`);
+        continue;
+      }
+
+      if (err?.code === 'EADDRINUSE') {
+        console.error(`[fatal] Port ${p} is already in use.`);
+        console.error('Hint: run `lsof -nP -iTCP:%s -sTCP:LISTEN` to find the process, or set PORT to a different value.', p);
+        console.error('Optional: set AUTO_PORT=1 to auto-try subsequent ports.');
+      }
+      throw err;
+    }
+  }
+
+  const msg = lastErr?.message ? String(lastErr.message) : String(lastErr || 'unknown error');
+  throw new Error(`Failed to bind a port starting at ${PORT}: ${msg}`);
+}
+
+start().catch((err) => {
+  console.error('[fatal] Failed to start server:', err);
+  process.exit(1);
 });

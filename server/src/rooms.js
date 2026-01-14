@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { createGame } from './game.js';
+import { normalizeRulesId } from './rules/registry.js';
 
 function now() {
   return Date.now();
@@ -20,7 +21,7 @@ export class RoomManager {
     this.emptyRoomTtlMs = emptyRoomTtlMs;
     this.sessionTtlMs = sessionTtlMs;
 
-    /** @type {Map<string, {id:string, game:any, players:Set<string>, spectators:Set<string>, updatedAt:number, leaderboard:any[]}>} */
+    /** @type {Map<string, {id:string, rulesId:string, rulesConfig:any, game:any, players:Set<string>, spectators:Set<string>, updatedAt:number, leaderboard:any[]}>} */
     this.rooms = new Map();
 
     /** token -> { token, playerId, nick, roomId, mode:'play'|'spectate', lastSeen, connectedSocketId|null } */
@@ -98,14 +99,25 @@ export class RoomManager {
     }
   }
 
-  ensureRoom(roomId) {
+  ensureRoom(roomId, { rulesId, rulesConfig } = {}) {
     if (roomId && this.rooms.has(roomId)) return this.rooms.get(roomId);
 
+    const normalizedRulesId = normalizeRulesId(rulesId);
+
     const id = roomId || makeRoomId();
-    const game = createGame({ tickHz: this.tickHz, broadcastHz: this.broadcastHz, world: this.world, movement: this.movement });
+    const game = createGame({
+      tickHz: this.tickHz,
+      broadcastHz: this.broadcastHz,
+      world: this.world,
+      movement: this.movement,
+      rulesId: normalizedRulesId,
+      rulesConfig
+    });
 
     const room = {
       id,
+      rulesId: normalizedRulesId,
+      rulesConfig,
       game,
       players: new Set(),
       bots: new Set(),
@@ -123,6 +135,15 @@ export class RoomManager {
 
     this.rooms.set(id, room);
     return room;
+  }
+
+  setRoomRulesConfig(roomId, rulesConfig) {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    room.rulesConfig = rulesConfig;
+    room.game.setRulesConfig?.(rulesConfig);
+    room.updatedAt = now();
+    return { ok: true };
   }
 
   setRoomBots(roomId, { enabled, count } = {}) {
@@ -184,8 +205,8 @@ export class RoomManager {
     }
   }
 
-  joinRoomAsPlayer(session, roomId) {
-    const room = this.ensureRoom(roomId);
+  joinRoomAsPlayer(session, roomId, { rulesId, rulesConfig } = {}) {
+    const room = this.ensureRoom(roomId, { rulesId, rulesConfig });
 
     // leave old room
     this.leaveCurrentRoom(session);
@@ -201,8 +222,8 @@ export class RoomManager {
     return room;
   }
 
-  joinRoomAsSpectator(session, roomId) {
-    const room = this.ensureRoom(roomId);
+  joinRoomAsSpectator(session, roomId, { rulesId, rulesConfig } = {}) {
+    const room = this.ensureRoom(roomId, { rulesId, rulesConfig });
 
     this.leaveCurrentRoom(session);
 
@@ -247,6 +268,7 @@ export class RoomManager {
     if (!room) return null;
     return {
       id: room.id,
+      rulesId: room.rulesId,
       world: room.game.getWorldInfo(),
       players: room.players.size,
       spectators: room.spectators.size
@@ -300,16 +322,18 @@ export class RoomManager {
   }
 
   // matchmaking: simplest queue-less quick match => join a not-full room else create
-  quickMatch(session) {
+  quickMatch(session, { rulesId, rulesConfig } = {}) {
+    const normalizedRulesId = normalizeRulesId(rulesId);
     // find an active room with < N players
     const MAX_PLAYERS = 16;
     let chosen = null;
     for (const room of this.rooms.values()) {
+      if (room.rulesId !== normalizedRulesId) continue;
       if (room.players.size > 0 && room.players.size < MAX_PLAYERS) {
         chosen = room;
         break;
       }
     }
-    return this.joinRoomAsPlayer(session, chosen?.id);
+    return this.joinRoomAsPlayer(session, chosen?.id, { rulesId: normalizedRulesId, rulesConfig: chosen ? chosen.rulesConfig : rulesConfig });
   }
 }

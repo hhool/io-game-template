@@ -24,11 +24,24 @@ function normalizeMovementConfig(movement) {
   return { baseSpeed, damping, blendMax };
 }
 
-export function createWorldState({ width, height }, { movement } = {}) {
+function normalizeAgarConfig(agar) {
+  const pelletCount = Number.isFinite(agar?.pelletCount) ? clamp(Math.floor(agar.pelletCount), 0, 2000) : 260;
+  const borderDeath = typeof agar?.borderDeath === 'boolean' ? agar.borderDeath : true;
+  const pelletGrowthMul = Number.isFinite(agar?.pelletGrowthMul) ? clamp(agar.pelletGrowthMul, 0, 12) : 2.2;
+  const speedMinMul = Number.isFinite(agar?.speedMinMul) ? clamp(agar.speedMinMul, 0.05, 1) : 0.35;
+  const speedCurvePow = Number.isFinite(agar?.speedCurvePow) ? clamp(agar.speedCurvePow, 0.1, 4) : 1.0;
+  const boostEnabled = typeof agar?.boostEnabled === 'boolean' ? agar.boostEnabled : true;
+  const boostMul = Number.isFinite(agar?.boostMul) ? clamp(agar.boostMul, 1.0, 2.0) : 1.15;
+  const deathMode = agar?.deathMode === 'respawn' || agar?.deathMode === 'kick' ? agar.deathMode : 'kick';
+  return { pelletCount, borderDeath, pelletGrowthMul, speedMinMul, speedCurvePow, boostEnabled, boostMul, deathMode };
+}
+
+export function createWorldState({ width, height }, { movement, agar } = {}) {
   const players = new Map();
   const inputs = new Map();
 
   const movementCfg = normalizeMovementConfig(movement);
+  let agarCfg = normalizeAgarConfig(agar);
 
   const botIds = new Set();
   const botBrain = new Map();
@@ -36,14 +49,26 @@ export function createWorldState({ width, height }, { movement } = {}) {
   const events = [];
 
   const pellets = [];
-  const pelletCount = 260;
-  for (let i = 0; i < pelletCount; i++) {
+  let pelletSeq = 0;
+  function addPellet() {
     pellets.push({
-      id: `p${i}`,
+      id: `p${pelletSeq++}`,
       x: rand(40, width - 40),
       y: rand(40, height - 40),
       r: rand(3.5, 6.5)
     });
+  }
+  function reconcilePelletCount(targetCount) {
+    const target = clamp(Math.floor(targetCount), 0, 2000);
+    while (pellets.length < target) addPellet();
+    if (pellets.length > target) pellets.length = target;
+  }
+  reconcilePelletCount(agarCfg.pelletCount);
+
+  function setAgarConfig(next) {
+    const merged = { ...agarCfg, ...(next && typeof next === 'object' ? next : {}) };
+    agarCfg = normalizeAgarConfig(merged);
+    reconcilePelletCount(agarCfg.pelletCount);
   }
 
   function addPlayer(id, { name, isBot } = {}) {
@@ -169,8 +194,8 @@ export function createWorldState({ width, height }, { movement } = {}) {
 
       // Agar-style: bigger => slower
       const baseSpeed = movementCfg.baseSpeed;
-      const sizePenalty = clamp(18 / p.r, 0.35, 1.0);
-      const boostMul = input.boost ? 1.15 : 1.0;
+      const sizePenalty = clamp(Math.pow(18 / p.r, agarCfg.speedCurvePow), agarCfg.speedMinMul, 1.0);
+      const boostMul = input.boost && agarCfg.boostEnabled ? agarCfg.boostMul : 1.0;
       const speed = baseSpeed * sizePenalty * boostMul;
 
       const len = Math.hypot(input.ax, input.ay);
@@ -189,16 +214,28 @@ export function createWorldState({ width, height }, { movement } = {}) {
       p.y = clamp(p.y + p.vy * dt, p.r, height - p.r);
       p.ts = Date.now();
 
-      // Simple fail condition: touching the world boundary => game over.
-      // This gives us a deterministic "lose" signal for the prototype.
-      const onBorder =
-        p.x <= p.r + 0.001 ||
-        p.x >= width - p.r - 0.001 ||
-        p.y <= p.r + 0.001 ||
-        p.y >= height - p.r - 0.001;
-      if (onBorder) {
-        died.push({ id, score: p.score });
-        continue;
+      if (agarCfg.borderDeath) {
+        // Simple fail condition: touching the world boundary => game over.
+        // This gives us a deterministic "lose" signal for the prototype.
+        const onBorder =
+          p.x <= p.r + 0.001 ||
+          p.x >= width - p.r - 0.001 ||
+          p.y <= p.r + 0.001 ||
+          p.y >= height - p.r - 0.001;
+        if (onBorder) {
+          if (agarCfg.deathMode === 'respawn') {
+            events.push({ type: 'respawn', id, score: p.score, reason: 'border' });
+            p.x = rand(100, width - 100);
+            p.y = rand(100, height - 100);
+            p.vx = 0;
+            p.vy = 0;
+            p.r = 18;
+            p.score = 0;
+          } else {
+            died.push({ id, score: p.score });
+          }
+          continue;
+        }
       }
 
       // pellet collection
@@ -209,7 +246,7 @@ export function createWorldState({ width, height }, { movement } = {}) {
         if (dist2(p.x, p.y, pel.x, pel.y) <= eatR2) {
           p.score += 1;
           // area-based growth, capped
-          const area = Math.PI * p.r * p.r + Math.PI * pel.r * pel.r * 2.2;
+          const area = Math.PI * p.r * p.r + Math.PI * pel.r * pel.r * agarCfg.pelletGrowthMul;
           p.r = clamp(Math.sqrt(area / Math.PI), 12, 120);
           // respawn pellet
           pel.x = rand(30, width - 30);
@@ -258,6 +295,7 @@ export function createWorldState({ width, height }, { movement } = {}) {
     removePlayer,
     setPlayerInput,
     hasPlayer,
+    setAgarConfig,
     step,
     drainEvents,
     getSnapshot,

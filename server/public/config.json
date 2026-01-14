@@ -28,5 +28,31 @@
   },
   "guide": {
     "touchGuideOnFirstUse": true
+  },
+  "rules": {
+    "agar-lite": {
+      "agar": {
+        "borderDeath": true,
+        "deathMode": "kick",
+        "pelletCount": 260,
+        "pelletGrowthMul": 2.2,
+        "speedMinMul": 0.35,
+        "speedCurvePow": 1.0,
+        "boostEnabled": true,
+        "boostMul": 1.15
+      }
+    },
+    "agar-advanced": {
+      "agar": {
+        "borderDeath": false,
+        "deathMode": "respawn",
+        "pelletCount": 320,
+        "pelletGrowthMul": 2.6,
+        "speedMinMul": 0.25,
+        "speedCurvePow": 1.25,
+        "boostEnabled": false,
+        "boostMul": 1.15
+      }
+    }
   }
 }

@@ -4,7 +4,12 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-export function createPacerLiteRules({ movement } = {}) {
+function randomColor() {
+  const palette = ['#4fc3f7', '#81c784', '#ffb74d', '#e57373', '#ba68c8', '#64b5f6'];
+  return palette[(Math.random() * palette.length) | 0];
+}
+
+export function createPaperLiteRules({ movement } = {}) {
   const cfg = {
     // placeholder defaults
     maxSpeed: Number.isFinite(movement?.maxSpeed) ? Math.max(1, movement.maxSpeed) : 520,
@@ -14,7 +19,7 @@ export function createPacerLiteRules({ movement } = {}) {
   };
 
   return {
-    id: 'pacer-lite',
+    id: 'paper-lite',
 
     createWorld(worldInfo) {
       return {
@@ -46,7 +51,10 @@ export function createPacerLiteRules({ movement } = {}) {
         vy: 0,
         heading: 0,
         lap: 0,
-        nextWp: 0
+        nextWp: 0,
+        r: 18,
+        color: randomColor(),
+        score: 0
       });
       world.inputs.set(playerId, { ax: 0, ay: 0, boost: false });
     },
@@ -66,7 +74,7 @@ export function createPacerLiteRules({ movement } = {}) {
 
     step(world, dt) {
       // placeholder: treat (ax, ay) as desired direction, convert to velocity.
-      // Proper pacer-lite should be turn-rate limited using `heading`.
+      // Proper paper-lite should be turn-rate limited using `heading`.
       for (const [id, p] of world.players) {
         const input = world.inputs.get(id) || { ax: 0, ay: 0, boost: false };
         const len = Math.hypot(input.ax, input.ay);
@@ -82,6 +90,9 @@ export function createPacerLiteRules({ movement } = {}) {
 
         p.x = clamp(p.x + p.vx * dt, 0, world.worldInfo.width);
         p.y = clamp(p.y + p.vy * dt, 0, world.worldInfo.height);
+
+        // placeholder scoring: distance traveled
+        p.score += Math.hypot(p.vx, p.vy) * dt * 0.01;
       }
       world.ts = Date.now();
     },
@@ -93,12 +104,16 @@ export function createPacerLiteRules({ movement } = {}) {
         players: Array.from(world.players.values()).map((p) => ({
           id: p.id,
           name: p.name,
+          isBot: Boolean(p.isBot),
           x: p.x,
           y: p.y,
           vx: p.vx,
           vy: p.vy,
           lap: p.lap,
-          nextWp: p.nextWp
+          nextWp: p.nextWp,
+          r: p.r,
+          color: p.color,
+          score: Math.floor(p.score)
         })),
         track: world.track
       };

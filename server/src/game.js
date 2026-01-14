@@ -1,7 +1,8 @@
-import { createWorldState } from './state.js';
+import { createWorldStateForRules, normalizeRulesId } from './rules/registry.js';
 
-export function createGame({ tickHz, broadcastHz, world, movement }) {
-  const worldState = createWorldState(world, { movement });
+export function createGame({ tickHz, broadcastHz, world, movement, rulesId, rulesConfig }) {
+  const normalizedRulesId = normalizeRulesId(rulesId);
+  const worldState = createWorldStateForRules({ rulesId: normalizedRulesId, world, movement, rulesConfig });
 
   let tickTimer = null;
   let broadcastTimer = null;
@@ -37,9 +38,10 @@ export function createGame({ tickHz, broadcastHz, world, movement }) {
     setPlayerName: worldState.setPlayerName,
     removePlayer: worldState.removePlayer,
     setPlayerInput: worldState.setPlayerInput,
+    setRulesConfig: worldState.setRulesConfig,
     hasPlayer: worldState.hasPlayer,
     drainEvents: worldState.drainEvents,
     getSnapshot: worldState.getSnapshot,
-    getWorldInfo: () => ({ ...worldState.getWorldInfo(), tickHz, broadcastHz })
+    getWorldInfo: () => ({ ...worldState.getWorldInfo(), tickHz, broadcastHz, rulesId: normalizedRulesId })
   };
 }

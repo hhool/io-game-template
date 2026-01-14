@@ -18,6 +18,23 @@ canvas{display:block;width:100vw;height:100vh;touch-action:none}
   padding:10px 12px;border-radius:10px;max-width:320px
 }
 
+.debugPanel{
+  position:fixed;right:12px;bottom:12px;z-index:11;
+  width:min(380px, calc(100vw - 24px));
+  max-height:min(70vh, 520px);
+  overflow:auto;
+  white-space:pre-wrap;
+  background:rgba(15,18,20,0.78);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px;
+  padding:10px 12px;
+  color:var(--text);
+  font-size:12px;
+  line-height:1.35;
+  backdrop-filter: blur(10px);
+  box-shadow:0 16px 48px rgba(0,0,0,0.35);
+}
+
 .hidden{display:none !important}
 
 .screen{
@@ -42,14 +59,93 @@ canvas{display:block;width:100vw;height:100vh;touch-action:none}
 .row label{width:120px;color:var(--muted);font-size:12px;font-weight:800}
 .row input,.row select{
   flex:1;
+  min-width:0;
   background:rgba(255,255,255,0.06);
   color:var(--text);
   border:1px solid rgba(255,255,255,0.10);
   border-radius:12px;
   padding:10px 12px;
   outline:none;
+  line-height:1.2;
+  box-sizing:border-box;
 }
 .row input:focus,.row select:focus{border-color:rgba(79,195,247,0.55)}
+
+.dropdownWrap{flex:1;min-width:0;position:relative}
+.dropdownWrap .nativeSelect{width:100%}
+.ddBtn{
+  width:100%;
+  text-align:left;
+  background:rgba(255,255,255,0.06);
+  color:var(--text);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:12px;
+  padding:10px 40px 10px 12px;
+  outline:none;
+  line-height:1.2;
+  box-sizing:border-box;
+  cursor:pointer;
+}
+.ddBtn:focus{border-color:rgba(79,195,247,0.55)}
+.ddBtn[disabled]{opacity:0.55;cursor:not-allowed}
+.ddBtn::after{
+  content:"";
+  position:absolute;
+  right:14px;
+  top:50%;
+  width:0;height:0;
+  border-left:6px solid transparent;
+  border-right:6px solid transparent;
+  border-top:7px solid rgba(230,237,243,0.75);
+  transform:translateY(-30%);
+  pointer-events:none;
+}
+.ddList{
+  position:absolute;
+  left:0;right:0;
+  top:calc(100% + 6px);
+  z-index:1000;
+  background:rgba(15,18,20,0.98);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:12px;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  max-height:min(52vh, 280px);
+  box-shadow:0 16px 48px rgba(0,0,0,0.50);
+  padding:6px;
+  display:none;
+}
+.dropdownWrap.open .ddList{display:block}
+.ddItem{
+  display:block;
+  width:100%;
+  text-align:left;
+  background:transparent;
+  color:var(--text);
+  border:0;
+  border-radius:10px;
+  padding:10px 10px;
+  cursor:pointer;
+  font:inherit;
+}
+.ddItem:hover{background:rgba(255,255,255,0.08)}
+.ddItem[aria-selected="true"]{background:rgba(79,195,247,0.18)}
+
+/* Always use the custom dropdown UI.
+  The underlying native <select> remains as the source of truth for JS, but is hidden to avoid
+  Chrome desktop (device emulation) popup positioning bugs. */
+.nativeSelect{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+
+@media (prefers-reduced-motion: reduce){
+  .ddList{scroll-behavior:auto}
+}
+
+/* Mobile/narrow screens: prevent label/control overlap and odd select positioning */
+@media (max-width: 420px){
+  .row{flex-direction:column;align-items:stretch;gap:6px}
+  .row label{width:auto}
+  .row input,.row select{width:100%}
+}
 
 button.primary{
   width:100%;
