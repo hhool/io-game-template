@@ -6,6 +6,7 @@ Planned rules:
 - gridless or soft-grid movement
 - body segments + growth
 - collision with self/others
+- food spawning + scoring
 
 Status:
 - TODO: implement rules module and rendering while reusing rooms/sessions/input.
