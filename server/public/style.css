@@ -11,12 +11,44 @@ html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 30
 canvas{display:block;width:100vw;height:100vh;touch-action:none}
 
 .hud{
-  position:fixed;left:12px;top:12px;z-index:10;
+  position:fixed;
+  left:calc(12px + env(safe-area-inset-left));
+  top:calc(12px + env(safe-area-inset-top));
+  z-index:10;
   background:var(--panel);
   border:1px solid rgba(255,255,255,0.06);
   backdrop-filter: blur(8px);
-  padding:10px 12px;border-radius:10px;max-width:320px
+  padding:10px 12px;
+  border-radius:10px;
+  max-width:320px;
+  /* Constrain within the *visual* viewport (mobile browser UI can break plain 100vh). */
+  max-height:calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height:calc(100svh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
 }
+
+.hudFab{
+  position:fixed;
+  left:calc(12px + env(safe-area-inset-left));
+  top:calc(12px + env(safe-area-inset-top));
+  z-index:12;
+  background:rgba(255,255,255,0.10);
+  color:var(--text);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:999px;
+  padding:8px 10px;
+  font-weight:900;
+  font-size:12px;
+  cursor:pointer;
+  backdrop-filter: blur(8px);
+  box-shadow:0 10px 28px rgba(0,0,0,0.30);
+}
+.hudFab:hover{border-color:rgba(79,195,247,0.55)}
 
 .hudHeader{display:flex;flex-direction:column;gap:4px}
 .hudHeaderLine{font-size:12px;color:var(--text);opacity:0.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

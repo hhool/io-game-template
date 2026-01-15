@@ -34,6 +34,8 @@ const playersTitleEl = document.getElementById("playersTitle");
 const playersEl = document.getElementById("players");
 const btnPlayersToggle = document.getElementById("btnPlayersToggle");
 
+const btnHudToggle = document.getElementById("btnHudToggle");
+
 const btnLeave = document.getElementById("btnLeave");
 
 const langSel = document.getElementById("lang");
@@ -430,6 +432,8 @@ const I18N = {
     hudRules: "Rules",
     inRoom: "in-room",
     connectError: "connect_error",
+    hudShow: "Show HUD",
+    hudHide: "Hide HUD",
     joining: "Joining…",
     loginWait: "Waiting for server…",
     connecting: "connecting…",
@@ -475,6 +479,8 @@ const I18N = {
     hudRules: "Правила",
     inRoom: "в комнате",
     connectError: "ошибка подключения",
+    hudShow: "Показать HUD",
+    hudHide: "Скрыть HUD",
     joining: "Входим…",
     loginWait: "Ожидание сервера…",
     connecting: "подключение…",
@@ -520,6 +526,8 @@ const I18N = {
     hudRules: "Règles",
     inRoom: "en salle",
     connectError: "erreur de connexion",
+    hudShow: "Afficher HUD",
+    hudHide: "Masquer HUD",
     joining: "Connexion…",
     loginWait: "En attente du serveur…",
     connecting: "connexion…",
@@ -565,6 +573,8 @@ const I18N = {
     hudRules: "规则",
     inRoom: "房间中",
     connectError: "连接错误",
+    hudShow: "显示 HUD",
+    hudHide: "隐藏 HUD",
     joining: "正在进入…",
     loginWait: "等待服务器响应…",
     connecting: "连接中…",
@@ -610,6 +620,8 @@ const I18N = {
     hudRules: "Regeln",
     inRoom: "im Raum",
     connectError: "Verbindungsfehler",
+    hudShow: "HUD anzeigen",
+    hudHide: "HUD ausblenden",
     joining: "Beitreten…",
     loginWait: "Warte auf Server…",
     connecting: "verbinde…",
@@ -655,6 +667,8 @@ const I18N = {
     hudRules: "القواعد",
     inRoom: "في الغرفة",
     connectError: "خطأ اتصال",
+    hudShow: "إظهار HUD",
+    hudHide: "إخفاء HUD",
     joining: "جارٍ الدخول…",
     loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
@@ -670,10 +684,32 @@ let token = storageGet(STORAGE_TOKEN);
 let profile = loadProfile();
 let lang = I18N[profile.lang] ? profile.lang : "en";
 let nick = sanitizeNick(profile.nick);
+let hudPanelHidden = Boolean(profile.hudPanelHidden);
 let profileConfirmed = false;
 let joinInFlight = false;
 let joinRequested = false;
 let socket = null;
+
+function setHudPanelHidden(hidden) {
+  const h = Boolean(hidden);
+  hudPanelHidden = h;
+  profile.hudPanelHidden = h;
+  saveProfile();
+
+  if (hudEl) hudEl.classList.toggle("hidden", h);
+  if (btnHudToggle) {
+    btnHudToggle.classList.remove("hidden");
+    btnHudToggle.setAttribute("aria-pressed", h ? "true" : "false");
+    btnHudToggle.textContent = h ? t("hudShow") : t("hudHide");
+  }
+}
+
+if (btnHudToggle) {
+  btnHudToggle.addEventListener("click", () => {
+    // Only meaningful in-game; on login screen the button is hidden.
+    setHudPanelHidden(!hudPanelHidden);
+  });
+}
 
 // --- Runtime state (declare early to avoid TDZ when applyLang/applyConfig run) ---
 let myId = null;
@@ -1196,7 +1232,6 @@ function applyLang() {
   if (nickInput) nickInput.placeholder = t("nickPlaceholder");
   if (btnLogin) btnLogin.textContent = t("enter");
 
-  if (statusEl && !currentRoomId) statusEl.textContent = t("connecting");
 
   if (hudTitleEl) hudTitleEl.textContent = t("hudTitle");
   if (btnLeave) btnLeave.textContent = t("leave");
@@ -1234,6 +1269,10 @@ function applyLang() {
   if (btnInfoToggle) {
     const collapsed = infoBoardEl?.classList?.contains("collapsed");
     btnInfoToggle.textContent = collapsed ? t("show") : t("hide");
+  }
+
+  if (btnHudToggle) {
+    btnHudToggle.textContent = hudPanelHidden ? t("hudShow") : t("hudHide");
   }
 
   if (statsTitleEl) statsTitleEl.textContent = t("stats");
@@ -1479,6 +1518,7 @@ function recordResult(score) {
 function showLogin(message = "") {
   loginEl.classList.remove("hidden");
   hudEl.classList.add("hidden");
+  if (btnHudToggle) btnHudToggle.classList.add("hidden");
   setLoginMessage(message || "");
   btnLogin.disabled = false;
   nickInput.disabled = false;
@@ -1490,7 +1530,9 @@ function showLogin(message = "") {
 
 function showGame() {
   loginEl.classList.add("hidden");
-  hudEl.classList.remove("hidden");
+  // Show the floating toggle, then apply saved HUD visibility.
+  if (btnHudToggle) btnHudToggle.classList.remove("hidden");
+  setHudPanelHidden(Boolean(profile.hudPanelHidden));
 }
 
 function setRulesDisabled(disabled) {
