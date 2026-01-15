@@ -762,6 +762,14 @@ const playerIdByPid = new Map();
 // Slim state uses numeric pid; keep an authoritative local state to apply deltas.
 const playersStateByPid = new Map();
 
+// Optional: receive state stream over native WebSocket (/ws) instead of Socket.IO.
+// We still keep Socket.IO for auth, room join/leave, and input uplink.
+let wsState = null;
+let wsStateActive = false;
+let wsLastSeq = 0;
+let wsNeedsFullPlayers = false;
+let wsNeedsFullPellets = false;
+
 // Pellets are sent as full snapshots occasionally and as deltas most ticks.
 const pelletsStateById = new Map();
 let world = { width: 2800, height: 1800 };
@@ -1782,6 +1790,13 @@ const backendUrl =
     ? window.location.origin
     : `http://${window.location.hostname || "localhost"}:6868`);
 
+// Optional: enable WS state channel via URL param:
+// - ?state=ws
+// - ?ws=1
+const useWsState = qs.get("state") === "ws" || qs.get("ws") === "1";
+const wsStateFmt = qs.get("wsFmt") || "array"; // array | object
+const wsStateDebug = qs.get("wsDebug") === "1";
+
 socket = io(backendUrl, {
   transports: ["polling", "websocket"],
   auth: { token },
@@ -2329,6 +2344,19 @@ socket.on("game:over", (payload = {}) => {
   // go back to login page
   profileConfirmed = false;
   joinInFlight = false;
+
+  // Stop WS state stream (if enabled)
+  try {
+    wsState?.close();
+  } catch {
+    // ignore
+  }
+  wsState = null;
+  wsStateActive = false;
+  wsLastSeq = 0;
+  wsNeedsFullPlayers = false;
+  wsNeedsFullPellets = false;
+
   showLogin(gameOverMsg);
 });
 
@@ -2343,6 +2371,9 @@ socket.on("room:joined", ({ room, mode }) => {
   btnLeave.disabled = !currentRoomId;
   statusEl.textContent = t("inRoom");
   setRulesDisabled(true);
+
+  // Optional: use /ws as the state channel
+  if (currentRoomId) connectWsStateStream(currentRoomId);
 
   // Apply bots config to this room (dynamic)
   syncBotsConfigToServer(true);
@@ -2378,6 +2409,18 @@ socket.on("room:left", () => {
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
   setRulesDisabled(false);
 
+  // Stop WS state stream (if enabled)
+  try {
+    wsState?.close();
+  } catch {
+    // ignore
+  }
+  wsState = null;
+  wsStateActive = false;
+  wsLastSeq = 0;
+  wsNeedsFullPlayers = false;
+  wsNeedsFullPellets = false;
+
   // Clear meta cache when leaving a room.
   playersMeta.clear();
   playerPidById.clear();
@@ -2391,7 +2434,10 @@ socket.on("room:left", () => {
 
 socket.on("players:meta", (payload = {}) => {
   if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
-  const list = Array.isArray(payload?.players) ? payload.players : [];
+  applyPlayersMeta(Array.isArray(payload?.players) ? payload.players : []);
+});
+
+function applyPlayersMeta(list) {
   for (const p of list) {
     const pid = Number.isFinite(p?.pid) ? p.pid : null;
     const id = typeof p?.id === "string" ? p.id : null;
@@ -2407,33 +2453,94 @@ socket.on("players:meta", (payload = {}) => {
       isBot: Boolean(p.isBot),
     });
   }
-});
+}
 
-socket.on("state", (snap) => {
+function decodePlayersMaybeArray(list) {
+  if (!Array.isArray(list)) return [];
+  if (!list.length) return [];
+  if (!Array.isArray(list[0])) return list;
+  // [pid,x,y,r10,score]
+  const out = [];
+  for (const row of list) {
+    if (!Array.isArray(row) || row.length < 5) continue;
+    const pid = Number(row[0]);
+    if (!Number.isFinite(pid)) continue;
+    out.push({ pid, x: Number(row[1]) || 0, y: Number(row[2]) || 0, r10: Number(row[3]) || 0, score: Number(row[4]) || 0 });
+  }
+  return out;
+}
+
+function decodePelletsMaybeArray(list) {
+  if (!Array.isArray(list)) return [];
+  if (!list.length) return [];
+  if (!Array.isArray(list[0])) return list;
+  // [id,x,y,r10]
+  const out = [];
+  for (const row of list) {
+    if (!Array.isArray(row) || row.length < 4) continue;
+    const id = row[0];
+    if (!id) continue;
+    out.push({ id, x: Number(row[1]) || 0, y: Number(row[2]) || 0, r10: Number(row[3]) || 0 });
+  }
+  return out;
+}
+
+function handleStateFrame(snap, source) {
+  // If WS state is active, ignore Socket.IO state frames.
+  if (source === "sio" && wsStateActive) return;
+
   if (snap?.roomId && currentRoomId && snap.roomId !== currentRoomId) return;
   if (snap?.rulesId && snap.rulesId !== currentRulesId) {
     currentRulesId = snap.rulesId;
     renderRoomLabel();
   }
 
+  // WS formal channel: detect gaps/out-of-order and request resync.
+  if (source === "ws" && Number.isFinite(snap?.seq)) {
+    const seq = snap.seq;
+    if (wsLastSeq && seq !== wsLastSeq + 1) {
+      wsNeedsFullPlayers = true;
+      wsNeedsFullPellets = true;
+      try {
+        wsState?.send(JSON.stringify({ type: "resync" }));
+      } catch {
+        // ignore
+      }
+    }
+    wsLastSeq = seq;
+  }
+
+  // WS may inline playersMeta on the state frame.
+  if (Array.isArray(snap?.playersMeta)) {
+    applyPlayersMeta(snap.playersMeta);
+  }
+
   // Bandwidth optimization: pellets are full or delta.
   if (snap) {
+    const fullPelletsList = decodePelletsMaybeArray(snap.pellets);
+    const deltaPelletsList = decodePelletsMaybeArray(snap.pelletsD);
+
+    if (Array.isArray(snap.pellets) && wsNeedsFullPellets && snap.fullPellets !== true) {
+      // Wait until we receive a full pellet snapshot after a resync.
+      return;
+    }
+
     if (Array.isArray(snap.pellets)) {
       pelletsStateById.clear();
-      for (const pel of snap.pellets) {
+      for (const pel of fullPelletsList) {
         const id = pel?.id;
         if (!id) continue;
         const r = Number.isFinite(pel?.r10) ? pel.r10 / 10 : Number(pel?.r) || 0;
         pelletsStateById.set(id, { id, x: Number(pel?.x) || 0, y: Number(pel?.y) || 0, r });
       }
+      wsNeedsFullPellets = false;
     } else {
       const gone = Array.isArray(snap.pelletsGone) ? snap.pelletsGone : [];
       for (const id of gone) {
         if (!id) continue;
         pelletsStateById.delete(id);
       }
-      const changed = Array.isArray(snap.pelletsD) ? snap.pelletsD : [];
-      for (const pel of changed) {
+      for (const pel of deltaPelletsList) {
         const id = pel?.id;
         if (!id) continue;
         const r = Number.isFinite(pel?.r10) ? pel.r10 / 10 : Number(pel?.r) || 0;
@@ -2452,9 +2559,17 @@ socket.on("state", (snap) => {
   // Bandwidth optimization: server may send players as full or delta updates.
   // Keep a local map keyed by pid, then rehydrate to the legacy shape.
   if (snap) {
+    const fullPlayersList = decodePlayersMaybeArray(snap.players);
+    const deltaPlayersList = decodePlayersMaybeArray(snap.playersD);
+
+    if (Array.isArray(snap.players) && wsNeedsFullPlayers && snap.fullPlayers !== true) {
+      // Wait until we receive a full players snapshot after a resync.
+      return;
+    }
+
     if (Array.isArray(snap.players)) {
       playersStateByPid.clear();
-      for (const p of snap.players) {
+      for (const p of fullPlayersList) {
         if (!Number.isFinite(p?.pid)) continue;
         playersStateByPid.set(p.pid, {
           pid: p.pid,
@@ -2464,8 +2579,9 @@ socket.on("state", (snap) => {
           score: Number(p?.score) || 0,
         });
       }
+      wsNeedsFullPlayers = false;
     } else {
-      const changed = Array.isArray(snap.playersD) ? snap.playersD : [];
+      const changed = deltaPlayersList;
       const gone = Array.isArray(snap.playersGone) ? snap.playersGone : [];
       for (const pid of gone) {
         if (!Number.isFinite(pid)) continue;
@@ -2521,7 +2637,74 @@ socket.on("state", (snap) => {
   renderDebugPanel(false);
   renderPlayersList(false);
   updateGameInfoFromSnapshot(snap);
-});
+}
+
+socket.on("state", (snap) => handleStateFrame(snap, "sio"));
+
+function makeWsUrl(baseHttpUrl, roomId) {
+  try {
+    const u = new URL(baseHttpUrl);
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    u.pathname = "/ws";
+    u.searchParams.set("room", roomId);
+    if (wsStateFmt) u.searchParams.set("fmt", wsStateFmt);
+    if (wsStateDebug) u.searchParams.set("debug", "1");
+    return u.toString();
+  } catch {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const host = window.location.hostname || "localhost";
+    const port = "6868";
+    const qs = new URLSearchParams();
+    qs.set("room", roomId);
+    if (wsStateFmt) qs.set("fmt", wsStateFmt);
+    if (wsStateDebug) qs.set("debug", "1");
+    return `${proto}://${host}:${port}/ws?${qs.toString()}`;
+  }
+}
+
+function connectWsStateStream(roomId) {
+  if (!useWsState) return;
+  if (!roomId) return;
+  try {
+    wsState?.close();
+  } catch {
+    // ignore
+  }
+
+  wsLastSeq = 0;
+  wsNeedsFullPlayers = false;
+  wsNeedsFullPellets = false;
+  wsStateActive = false;
+
+  const url = makeWsUrl(backendUrl, roomId);
+  wsState = new WebSocket(url);
+
+  wsState.addEventListener("open", () => {
+    wsStateActive = true;
+    // Request a full snapshot immediately to seed caches.
+    wsNeedsFullPlayers = true;
+    wsNeedsFullPellets = true;
+    try {
+      wsState.send(JSON.stringify({ type: "resync" }));
+    } catch {
+      // ignore
+    }
+  });
+
+  wsState.addEventListener("message", (ev) => {
+    try {
+      const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
+      if (!msg || msg.type !== "state") return;
+      handleStateFrame(msg, "ws");
+    } catch {
+      // ignore
+    }
+  });
+
+  wsState.addEventListener("close", () => {
+    wsStateActive = false;
+  });
+}
 
 socket.on("leaderboard", (payload) => {
   if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
