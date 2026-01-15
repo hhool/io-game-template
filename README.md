@@ -71,7 +71,13 @@ npm run dev
 ```
 
 ## Native WebSocket
-- `ws://localhost:6868/ws` (read-only state stream example)
+- `ws://localhost:6868/ws` (read-only state stream)
+
+This project uses Socket.IO for control-plane (auth/join/leave/input) and can optionally use native WebSocket as the **state downlink** channel.
+
+Client opt-in (browser URL params):
+- `/?state=ws&wsFmt=array` (use `/ws` for state, keep Socket.IO for everything else)
+- `&wsDebug=1` (include extra debug fields in WS frames)
 
 ## Controls configuration
 Client controls can be enabled/disabled and mode-selected via:
@@ -230,13 +236,40 @@ Optional env overrides:
   - `room:left`
 
 ### State & leaderboard
-- `state { roomId, rulesId, ts, players, pellets, ... }`
-- `leaderboard { roomId, top: [{id, score, color, r}] }`
+
+State is bandwidth-optimized:
+- `state { roomId, rulesId, ts, seq, ... }`
+  - `seq`: monotonic sequence id per room (helps client detect missing deltas)
+  - Players are **pid-mapped** and delta-compressed:
+    - Meta: `players:meta { roomId, players: [{ pid, id, name, color, isBot }] }` (low-frequency)
+    - State payload: either `players` (full, periodic) or `playersD/playersGone` (delta)
+    - Player fields are quantized: `{ pid, x, y, r10, score }` where `r10 = round(r*10)`
+  - Pellets are delta-compressed:
+    - Either `pellets` (full, periodic) or `pelletsD/pelletsGone` (delta)
+    - Pellet fields are quantized: `{ id, x, y, r10 }`
+
+Leaderboard is streamed at a lower rate:
+- `leaderboard { roomId, top: [{id, score, color, r}] }` (throttled ~1Hz)
 
 ### Native WebSocket details
+
+Endpoint:
 - `ws://localhost:6868/ws?room=<roomId>`
-  - `hello { room, serverTs }`
-  - `state { roomId, ts, players, pellets, leaderboard }`
+
+Optional params:
+- `fmt=array` (compact arrays instead of objects)
+- `debug=1` (include a `debug` field in state frames)
+
+Messages:
+- `hello { proto, room, serverTs, formats, fmt, debug }`
+- `state { proto, roomId, ts, seq, fullPlayers, fullPellets, playersMeta?, players|playersD|playersGone, pellets|pelletsD|pelletsGone, leaderboard? }`
+
+Client  server control (optional):
+- Send `{"type":"resync"}` to force a full snapshot on the next tick.
+
+Array format layouts:
+- `players`: `[pid, x, y, r10, score]`
+- `pellets`: `[id, x, y, r10]`
 
 ## Donate / Support
 If this project helps you, consider supporting it:

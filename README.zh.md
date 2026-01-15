@@ -71,7 +71,13 @@ npm run dev
 ```
 
 ## 原生 WebSocket
-- `ws://localhost:6868/ws`（只读推送 state 示例）
+- `ws://localhost:6868/ws`（只读推送 state）
+
+本项目默认使用 Socket.IO 作为控制通道（auth/join/leave/input 等），并支持把原生 WebSocket 作为**状态下行**正式通道（带宽更省）。
+
+前端启用（浏览器 URL 参数）：
+- `/?state=ws&wsFmt=array`（状态走 `/ws`，其它仍走 Socket.IO）
+- `&wsDebug=1`（WS state 里带额外 debug 字段）
 
 ## 控制配置（输入方式开关/模式）
 前端输入方式支持通过以下两种方式配置：
@@ -236,13 +242,40 @@ URL 传参快速测试（不持久化）：
 	- `room:left`
 
 ### 状态与排行榜
-- `state { roomId, rulesId, ts, players, pellets, ... }`: 房间状态快照
-- `leaderboard { roomId, top: [{id, score, color, r}] }`: 房间 Top10
+
+状态同步已做带宽优化：
+- `state { roomId, rulesId, ts, seq, ... }`: 房间状态快照
+	- `seq`：房间内单调递增序号（用于检测丢包/缺 delta）
+	- 玩家同步使用 **pid 映射 + delta**：
+		- Meta：`players:meta { roomId, players: [{ pid, id, name, color, isBot }] }`（低频）
+		- State：定期全量 `players`，其它 tick 发 `playersD/playersGone`
+		- 字段量化：`{ pid, x, y, r10, score }`，其中 `r10 = round(r*10)`
+	- 豆子同步使用 delta：
+		- 定期全量 `pellets`，其它 tick 发 `pelletsD/pelletsGone`
+		- 字段量化：`{ id, x, y, r10 }`
+
+排行榜会降频推送：
+- `leaderboard { roomId, top: [{id, score, color, r}] }`（约 1Hz）
 
 ### 原生 WebSocket
+
+地址：
 - `ws://localhost:6868/ws?room=<roomId>`
-	- `hello { room, serverTs }`
-	- `state { roomId, ts, players, pellets, leaderboard }`
+
+可选参数：
+- `fmt=array`（用数组格式发送，更紧凑）
+- `debug=1`（state 里带 `debug` 字段）
+
+消息：
+- `hello { proto, room, serverTs, formats, fmt, debug }`
+- `state { proto, roomId, ts, seq, fullPlayers, fullPellets, playersMeta?, players|playersD|playersGone, pellets|pelletsD|pelletsGone, leaderboard? }`
+
+客户端  服务端控制（可选）：
+- 发送 `{"type":"resync"}`，下一帧强制下发一次全量快照。
+
+数组格式约定：
+- `players`: `[pid, x, y, r10, score]`
+- `pellets`: `[id, x, y, r10]`
 
 ## 捐赠 / 支持
 如果这个项目对你有帮助，欢迎支持：
