@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "1wlgame: serve (0.0.0.0:6868)",
+			"type": "shell",
+			"command": "cd server && HOST=0.0.0.0 PORT=6868 node index.js",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
