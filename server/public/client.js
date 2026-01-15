@@ -426,6 +426,10 @@ const I18N = {
     labelPlayersCount: "Players",
     labelPellets: "Pellets",
     labelYou: "You",
+    hudRoom: "Room",
+    hudRules: "Rules",
+    inRoom: "in-room",
+    connectError: "connect_error",
     joining: "Joining…",
     loginWait: "Waiting for server…",
     connecting: "connecting…",
@@ -467,6 +471,10 @@ const I18N = {
     labelPlayersCount: "Игроки",
     labelPellets: "Еда",
     labelYou: "Вы",
+    hudRoom: "Комната",
+    hudRules: "Правила",
+    inRoom: "в комнате",
+    connectError: "ошибка подключения",
     joining: "Входим…",
     loginWait: "Ожидание сервера…",
     connecting: "подключение…",
@@ -508,6 +516,10 @@ const I18N = {
     labelPlayersCount: "Joueurs",
     labelPellets: "Granules",
     labelYou: "Vous",
+    hudRoom: "Salle",
+    hudRules: "Règles",
+    inRoom: "en salle",
+    connectError: "erreur de connexion",
     joining: "Connexion…",
     loginWait: "En attente du serveur…",
     connecting: "connexion…",
@@ -549,6 +561,10 @@ const I18N = {
     labelPlayersCount: "玩家",
     labelPellets: "食物",
     labelYou: "你",
+    hudRoom: "房间",
+    hudRules: "规则",
+    inRoom: "房间中",
+    connectError: "连接错误",
     joining: "正在进入…",
     loginWait: "等待服务器响应…",
     connecting: "连接中…",
@@ -590,6 +606,10 @@ const I18N = {
     labelPlayersCount: "Spieler",
     labelPellets: "Pellets",
     labelYou: "Du",
+    hudRoom: "Raum",
+    hudRules: "Regeln",
+    inRoom: "im Raum",
+    connectError: "Verbindungsfehler",
     joining: "Beitreten…",
     loginWait: "Warte auf Server…",
     connecting: "verbinde…",
@@ -631,6 +651,10 @@ const I18N = {
     labelPlayersCount: "اللاعبون",
     labelPellets: "الحبيبات",
     labelYou: "أنت",
+    hudRoom: "الغرفة",
+    hudRules: "القواعد",
+    inRoom: "في الغرفة",
+    connectError: "خطأ اتصال",
     joining: "جارٍ الدخول…",
     loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
@@ -1172,6 +1196,8 @@ function applyLang() {
   if (nickInput) nickInput.placeholder = t("nickPlaceholder");
   if (btnLogin) btnLogin.textContent = t("enter");
 
+  if (statusEl && !currentRoomId) statusEl.textContent = t("connecting");
+
   if (hudTitleEl) hudTitleEl.textContent = t("hudTitle");
   if (btnLeave) btnLeave.textContent = t("leave");
   // Hint depends on current input scheme
@@ -1222,6 +1248,7 @@ function applyLang() {
   }
 
   if (recentTitleEl) recentTitleEl.textContent = t("recent");
+  renderRoomLabel();
   renderStats();
   renderPlayersList(true);
 }
@@ -1663,8 +1690,8 @@ function renderRoomLabel() {
     if (hudRulesEl) hudRulesEl.textContent = "";
     return;
   }
-  roomEl.textContent = `room: ${currentRoomId}`;
-  if (hudRulesEl) hudRulesEl.textContent = `rules: ${currentRulesId ?? "-"}`;
+  roomEl.textContent = `${t("hudRoom")}: ${currentRoomId}`;
+  if (hudRulesEl) hudRulesEl.textContent = `${t("hudRules")}: ${currentRulesId ?? "-"}`;
 }
 
 function updateGameInfoFromSnapshot(snap) {
@@ -2099,7 +2126,7 @@ socket.on("disconnect", () => {
 
 socket.on("connect_error", (err) => {
   const msg = err?.message || String(err);
-  statusEl.textContent = `connect_error (${backendUrl}): ${msg}`;
+  statusEl.textContent = `${t("connectError")} (${backendUrl}): ${msg}`;
   console.error("[socket] connect_error", err);
   joinInFlight = false;
   currentRoomId = null;
@@ -2116,7 +2143,7 @@ socket.on("connect_error", (err) => {
   if (!loginEl.classList.contains("hidden")) {
     btnLogin.disabled = false;
     nickInput.disabled = false;
-    setLoginMessage(`connect_error: ${msg}`);
+    setLoginMessage(`${t("connectError")}: ${msg}`);
   }
 });
 
@@ -2198,7 +2225,7 @@ socket.on("room:joined", ({ room, mode }) => {
   pendingRulesId = null;
   renderRoomLabel();
   btnLeave.disabled = !currentRoomId;
-  statusEl.textContent = "in-room";
+  statusEl.textContent = t("inRoom");
   setRulesDisabled(true);
 
   // Apply bots config to this room (dynamic)
