@@ -36,6 +36,31 @@ npm run dev
 - 如果 `6868` 端口被占用，服务端会输出清晰错误并退出。
 - 如需自动尝试后续端口（6868..6887），使用 `AUTO_PORT=1`（例如：`AUTO_PORT=1 npm run dev`）。
 
+## 本地启动/停止脚本（6868）
+
+日常本地开发建议使用 `server/scripts/dev_local.sh` 来管理 `6868` 端口的后台进程（start/stop/status/logs）。
+
+```bash
+cd server
+./scripts/dev_local.sh start
+./scripts/dev_local.sh status
+./scripts/dev_local.sh logs
+./scripts/dev_local.sh stop
+```
+
+安全提示：
+- 默认情况下，脚本不会去杀掉“占用 6868 的未知进程”（避免误杀别的服务）。
+- 如果你确认要停掉当前占用端口的进程并重启服务，显式使用：
+
+```bash
+cd server
+FORCE_PORT_KILL=1 ./scripts/dev_local.sh restart
+```
+
+文件位置：
+- PID：`/tmp/1wlgame6868.local.pid`
+- Log：`/tmp/1wlgame6868.local.log`
+
 ## 手机端浏览器测试（局域网 LAN）
 只要手机和 Mac 在同一个 Wi‑Fi 下，就可以用手机浏览器直接打开进行测试。
 

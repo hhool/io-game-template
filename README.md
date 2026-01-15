@@ -36,6 +36,31 @@ Port notes:
 - If `6868` is already in use, the server exits with a clear error.
 - To auto-try the next ports (6868..6887), run with `AUTO_PORT=1` (example: `AUTO_PORT=1 npm run dev`).
 
+## Local start/stop helper (6868)
+
+For day-to-day local dev, use `server/scripts/dev_local.sh` to manage a background process on port `6868`.
+
+```bash
+cd server
+./scripts/dev_local.sh start
+./scripts/dev_local.sh status
+./scripts/dev_local.sh logs
+./scripts/dev_local.sh stop
+```
+
+Safety note:
+- By default, it will NOT kill an unknown process that already uses port `6868`.
+- If you explicitly want to stop whatever is using the port and restart the server, use:
+
+```bash
+cd server
+FORCE_PORT_KILL=1 ./scripts/dev_local.sh restart
+```
+
+Files:
+- PID: `/tmp/1wlgame6868.local.pid`
+- Log: `/tmp/1wlgame6868.local.log`
+
 ## Test on phone (LAN)
 If your phone and Mac are on the same Wi‑Fi, you can test the game from the phone browser.
 
