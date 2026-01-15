@@ -755,7 +755,10 @@ let currentRulesId = null;
 let pendingRulesId = null;
 
 // Player meta is broadcast separately to reduce state payload size.
+// Keyed by numeric pid (compact id used in state payloads).
 const playersMeta = new Map();
+const playerPidById = new Map();
+const playerIdByPid = new Map();
 let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
@@ -2372,6 +2375,8 @@ socket.on("room:left", () => {
 
   // Clear meta cache when leaving a room.
   playersMeta.clear();
+  playerPidById.clear();
+  playerIdByPid.clear();
 
   // Exit returns to login screen (user requested).
   showLogin("");
@@ -2381,8 +2386,15 @@ socket.on("players:meta", (payload = {}) => {
   if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
   const list = Array.isArray(payload?.players) ? payload.players : [];
   for (const p of list) {
-    if (!p?.id) continue;
-    playersMeta.set(p.id, {
+    const pid = Number.isFinite(p?.pid) ? p.pid : null;
+    const id = typeof p?.id === "string" ? p.id : null;
+    if (pid == null || !id) continue;
+
+    playerPidById.set(id, pid);
+    playerIdByPid.set(pid, id);
+
+    playersMeta.set(pid, {
+      id,
       name: typeof p.name === "string" ? p.name : "",
       color: typeof p.color === "string" ? p.color : "",
       isBot: Boolean(p.isBot),
@@ -2406,22 +2418,52 @@ socket.on("state", (snap) => {
   // Bandwidth optimization: server may omit player meta from `state.players`.
   // Rehydrate from `players:meta` cache so the rest of the client can keep using p.name/p.color/p.isBot.
   if (snap && Array.isArray(snap.players)) {
-    const ids = new Set();
-    const hydrated = snap.players.map((p) => {
-      const id = p?.id;
-      if (id) ids.add(id);
-      const meta = id ? playersMeta.get(id) : null;
-      return {
-        ...p,
-        name: meta?.name ?? p?.name ?? "",
-        color: meta?.color ?? p?.color ?? "",
-        isBot: meta?.isBot ?? Boolean(p?.isBot),
-      };
-    });
+    const livePids = new Set();
+    const hydrated = snap.players
+      .map((p) => {
+        // New slim format: { pid, x, y, r10, score }
+        if (Number.isFinite(p?.pid)) {
+          const pid = p.pid;
+          livePids.add(pid);
+          const meta = playersMeta.get(pid);
+          const id = meta?.id || playerIdByPid.get(pid) || null;
+          return {
+            id,
+            pid,
+            x: Number(p?.x) || 0,
+            y: Number(p?.y) || 0,
+            r: Number.isFinite(p?.r10) ? p.r10 / 10 : Number(p?.r) || 0,
+            score: Number(p?.score) || 0,
+            name: meta?.name ?? "",
+            color: meta?.color ?? "",
+            isBot: meta?.isBot ?? false,
+          };
+        }
 
-    // Prune meta cache for players no longer present.
-    for (const id of playersMeta.keys()) {
-      if (!ids.has(id)) playersMeta.delete(id);
+        // Backward-compat: old format still works.
+        const id = p?.id;
+        const pid = id ? playerPidById.get(id) : null;
+        if (pid != null) livePids.add(pid);
+        const meta = pid != null ? playersMeta.get(pid) : null;
+        return {
+          ...p,
+          pid,
+          name: meta?.name ?? p?.name ?? "",
+          color: meta?.color ?? p?.color ?? "",
+          isBot: meta?.isBot ?? Boolean(p?.isBot),
+        };
+      })
+      .filter((p) => p && p.id);
+
+    // Prune meta/mappings for players no longer present.
+    for (const pid of playersMeta.keys()) {
+      if (!livePids.has(pid)) playersMeta.delete(pid);
+    }
+    for (const [id, pid] of playerPidById) {
+      if (!livePids.has(pid)) playerPidById.delete(id);
+    }
+    for (const pid of playerIdByPid.keys()) {
+      if (!livePids.has(pid)) playerIdByPid.delete(pid);
     }
 
     snap = { ...snap, players: hydrated };

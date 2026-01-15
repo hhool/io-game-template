@@ -359,6 +359,12 @@ setInterval(() => {
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
 
+    // Per-room numeric player id mapping (stable while the room lives).
+    // Allows `state` to send compact integer ids.
+    const pidById = room._pidById || (room._pidById = new Map());
+    const idByPid = room._idByPid || (room._idByPid = new Map());
+    if (!Number.isFinite(room._pidSeq)) room._pidSeq = 1;
+
     // Keep bots in sync with room settings
     rooms.ensureBots(room);
 
@@ -409,7 +415,16 @@ setInterval(() => {
     for (const p of Array.isArray(snap.players) ? snap.players : []) {
       if (!p?.id) continue;
       currentIds.add(p.id);
-      const meta = { id: p.id, name: p.name || '', color: p.color || '', isBot: Boolean(p.isBot) };
+
+      // Allocate numeric pid for this player id.
+      let pid = pidById.get(p.id);
+      if (!pid) {
+        pid = room._pidSeq++;
+        pidById.set(p.id, pid);
+        idByPid.set(pid, p.id);
+      }
+
+      const meta = { pid, id: p.id, name: p.name || '', color: p.color || '', isBot: Boolean(p.isBot) };
       allMeta.push(meta);
       const prev = metaCache.get(p.id);
       if (!prev || prev.name !== meta.name || prev.color !== meta.color || prev.isBot !== meta.isBot) {
@@ -420,6 +435,12 @@ setInterval(() => {
     // Prune cache entries for players that left.
     for (const id of metaCache.keys()) {
       if (!currentIds.has(id)) metaCache.delete(id);
+    }
+    for (const [id, pid] of pidById) {
+      if (!currentIds.has(id)) {
+        pidById.delete(id);
+        idByPid.delete(pid);
+      }
     }
     const lastMetaSentAt = room._playersMetaSentAt || 0;
     const metaDue = !lastMetaSentAt || now - lastMetaSentAt >= PLAYERS_META_SEND_EVERY_MS;
@@ -442,13 +463,20 @@ setInterval(() => {
 
     // Slim down players payload: omit meta fields (name/color/isBot) from `state`.
     const slimPlayers = Array.isArray(snap.players)
-      ? snap.players.map((p) => ({
-          id: p.id,
-          x: Math.round(p.x),
-          y: Math.round(p.y),
-          r: Math.round(p.r * 10) / 10,
-          score: p.score
-        }))
+      ? snap.players
+          .map((p) => {
+            if (!p?.id) return null;
+            const pid = pidById.get(p.id);
+            if (!pid) return null;
+            return {
+              pid,
+              x: Math.round(p.x),
+              y: Math.round(p.y),
+              r10: Math.round(p.r * 10),
+              score: Math.round(Number(p.score) || 0)
+            };
+          })
+          .filter(Boolean)
       : [];
 
     const payload = { roomId: room.id, ...snap, players: slimPlayers };
