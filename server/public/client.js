@@ -1794,7 +1794,7 @@ const backendUrl =
 // - ?state=ws
 // - ?ws=1
 const useWsState = qs.get("state") === "ws" || qs.get("ws") === "1";
-const wsStateFmt = qs.get("wsFmt") || "array"; // array | object
+const wsStateFmt = qs.get("wsFmt") || "array"; // array | object | bin
 const wsStateDebug = qs.get("wsDebug") === "1";
 
 socket = io(backendUrl, {
@@ -2474,15 +2474,22 @@ function decodePelletsMaybeArray(list) {
   if (!Array.isArray(list)) return [];
   if (!list.length) return [];
   if (!Array.isArray(list[0])) return list;
-  // [id,x,y,r10]
+  // [id|idNum,x,y,r10]
   const out = [];
   for (const row of list) {
     if (!Array.isArray(row) || row.length < 4) continue;
-    const id = row[0];
+    const rawId = row[0];
+    const id = normalizePelletId(rawId);
     if (!id) continue;
     out.push({ id, x: Number(row[1]) || 0, y: Number(row[2]) || 0, r10: Number(row[3]) || 0 });
   }
   return out;
+}
+
+function normalizePelletId(id) {
+  if (typeof id === "string") return id;
+  if (typeof id === "number" && Number.isFinite(id)) return `p${Math.trunc(id)}`;
+  return null;
 }
 
 function handleStateFrame(snap, source) {
@@ -2536,7 +2543,8 @@ function handleStateFrame(snap, source) {
       wsNeedsFullPellets = false;
     } else {
       const gone = Array.isArray(snap.pelletsGone) ? snap.pelletsGone : [];
-      for (const id of gone) {
+      for (const rawId of gone) {
+        const id = normalizePelletId(rawId);
         if (!id) continue;
         pelletsStateById.delete(id);
       }
@@ -2678,6 +2686,7 @@ function connectWsStateStream(roomId) {
 
   const url = makeWsUrl(backendUrl, roomId);
   wsState = new WebSocket(url);
+  if (wsStateFmt === "bin") wsState.binaryType = "arraybuffer";
 
   wsState.addEventListener("open", () => {
     wsStateActive = true;
@@ -2693,9 +2702,73 @@ function connectWsStateStream(roomId) {
 
   wsState.addEventListener("message", (ev) => {
     try {
-      const msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
-      if (!msg || msg.type !== "state") return;
-      handleStateFrame(msg, "ws");
+      if (typeof ev.data === "string") {
+        const msg = JSON.parse(ev.data);
+        if (!msg) return;
+
+        if (msg.type === "players:meta") {
+          if (msg?.roomId && currentRoomId && msg.roomId !== currentRoomId) return;
+          applyPlayersMeta(Array.isArray(msg.players) ? msg.players : []);
+          return;
+        }
+
+        if (msg.type === "leaderboard") {
+          if (wsStateActive) {
+            const payload = { roomId: msg.roomId, top: msg.top };
+            // inline render logic from socket.on('leaderboard') handler
+            if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
+            const top = payload?.top ?? [];
+            lbEl.innerHTML = "";
+            for (const entry of top) {
+              const li = document.createElement("li");
+              const label = entry.name ? entry.name : entry.id.slice(0, 6);
+              const left = document.createElement("span");
+              left.textContent = label;
+              const right = document.createElement("span");
+              right.textContent = `score=${entry.score}`;
+              li.appendChild(left);
+              li.appendChild(right);
+              lbEl.appendChild(li);
+            }
+          }
+          return;
+        }
+
+        if (msg.type === "debug") {
+          // optional; shown in console only
+          // eslint-disable-next-line no-console
+          if (wsStateDebug) console.log("[ws:debug]", msg);
+          return;
+        }
+
+        if (msg.type === "state") {
+          handleStateFrame(msg, "ws");
+        }
+        return;
+      }
+
+      // Binary state frame (wsFmt=bin)
+      if (wsStateFmt === "bin") {
+        if (ev.data instanceof ArrayBuffer) {
+          const frame = decodeWsBinState(ev.data);
+          if (!frame) return;
+          // Attach roomId so existing filters keep working.
+          frame.roomId = currentRoomId;
+          handleStateFrame(frame, "ws");
+          return;
+        }
+        if (typeof Blob !== "undefined" && ev.data instanceof Blob) {
+          ev.data
+            .arrayBuffer()
+            .then((ab) => {
+              const frame = decodeWsBinState(ab);
+              if (!frame) return;
+              frame.roomId = currentRoomId;
+              handleStateFrame(frame, "ws");
+            })
+            .catch(() => {});
+        }
+      }
     } catch {
       // ignore
     }
@@ -2707,6 +2780,7 @@ function connectWsStateStream(roomId) {
 }
 
 socket.on("leaderboard", (payload) => {
+  if (wsStateActive) return;
   if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
   const top = payload?.top ?? [];
   lbEl.innerHTML = "";
@@ -2722,6 +2796,110 @@ socket.on("leaderboard", (payload) => {
     lbEl.appendChild(li);
   }
 });
+
+function decodeWsBinState(ab) {
+  try {
+    const dv = new DataView(ab);
+    let o = 0;
+    const magic = dv.getUint32(o, true);
+    o += 4;
+    if (magic !== 0x474c5731) return null;
+    const proto = dv.getUint8(o);
+    o += 1;
+    if (proto !== 1) return null;
+    const flags = dv.getUint8(o);
+    o += 1;
+    o += 2; // reserved
+    const seq = dv.getUint32(o, true);
+    o += 4;
+    const ts = dv.getFloat64(o, true);
+    o += 8;
+    const rulesIdCode = dv.getUint8(o);
+    o += 1;
+    o += 3; // reserved2
+
+    const rulesId = rulesIdCode === 0 ? "agar-lite" : rulesIdCode === 1 ? "agar-advanced" : rulesIdCode === 2 ? "paper-lite" : null;
+
+    const fullPlayers = (flags & 1) !== 0;
+    const fullPellets = (flags & 2) !== 0;
+
+    const playersCount = dv.getUint16(o, true);
+    o += 2;
+    const players = [];
+    const playersD = [];
+    for (let i = 0; i < playersCount; i++) {
+      const pid = dv.getUint16(o, true);
+      o += 2;
+      const x = dv.getInt32(o, true);
+      o += 4;
+      const y = dv.getInt32(o, true);
+      o += 4;
+      const r10 = dv.getUint16(o, true);
+      o += 2;
+      const score = dv.getUint32(o, true);
+      o += 4;
+      const rec = { pid, x, y, r10, score };
+      if (fullPlayers) players.push(rec);
+      else playersD.push(rec);
+    }
+    const playersGoneCount = dv.getUint16(o, true);
+    o += 2;
+    const playersGone = [];
+    for (let i = 0; i < playersGoneCount; i++) {
+      playersGone.push(dv.getUint16(o, true));
+      o += 2;
+    }
+
+    const pelletsCount = dv.getUint16(o, true);
+    o += 2;
+    const pellets = [];
+    const pelletsD = [];
+    for (let i = 0; i < pelletsCount; i++) {
+      const idNum = dv.getUint32(o, true);
+      o += 4;
+      const x = dv.getInt32(o, true);
+      o += 4;
+      const y = dv.getInt32(o, true);
+      o += 4;
+      const r10 = dv.getUint16(o, true);
+      o += 2;
+      o += 2; // pad
+      const rec = { id: `p${idNum}`, x, y, r10 };
+      if (fullPellets) pellets.push(rec);
+      else pelletsD.push(rec);
+    }
+    const pelletsGoneCount = dv.getUint16(o, true);
+    o += 2;
+    const pelletsGone = [];
+    for (let i = 0; i < pelletsGoneCount; i++) {
+      const idNum = dv.getUint32(o, true);
+      o += 4;
+      pelletsGone.push(`p${idNum}`);
+    }
+
+    const out = {
+      type: "state",
+      seq,
+      ts,
+      rulesId: rulesId || undefined,
+      fullPlayers,
+      fullPellets,
+    };
+    if (fullPlayers) out.players = players;
+    else {
+      if (playersD.length) out.playersD = playersD;
+      if (playersGone.length) out.playersGone = playersGone;
+    }
+    if (fullPellets) out.pellets = pellets;
+    else {
+      if (pelletsD.length) out.pelletsD = pelletsD;
+      if (pelletsGone.length) out.pelletsGone = pelletsGone;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
 
 // Lightweight ping measurement (server supports ack on sys:ping)
 setInterval(() => {

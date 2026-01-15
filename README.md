@@ -77,6 +77,7 @@ This project uses Socket.IO for control-plane (auth/join/leave/input) and can op
 
 Client opt-in (browser URL params):
 - `/?state=ws&wsFmt=array` (use `/ws` for state, keep Socket.IO for everything else)
+- `/?state=ws&wsFmt=bin` (use `/ws` state downlink in binary; smaller than JSON/array)
 - `&wsDebug=1` (include extra debug fields in WS frames)
 
 ## Controls configuration
@@ -186,7 +187,7 @@ Notes:
 Maintain this list by checking items off as you ship.
 
 ### P0 (Playable loop)
-- [ ] Eat / mass growth rules (pellets + players)
+- [x] Eat / mass growth rules (pellets + players)
 - [ ] Death + respawn loop
 - [ ] Camera zoom that scales with player size (and minimap sync)
 - [ ] Basic in-game HUD (players, ping, FPS) + settings panel for minimap/bots/movement
@@ -240,6 +241,10 @@ Optional env overrides:
 State is bandwidth-optimized:
 - `state { roomId, rulesId, ts, seq, ... }`
   - `seq`: monotonic sequence id per room (helps client detect missing deltas)
+  - Eating / growth is server-authoritative and reflected by:
+    - Eaten pellets disappearing via `pelletsGone` (or missing from the next full `pellets`)
+    - Eaten players disappearing via `playersGone` (and death events on the control plane)
+    - The eater's `r10` and `score` increasing in subsequent `players`/`playersD`
   - Players are **pid-mapped** and delta-compressed:
     - Meta: `players:meta { roomId, players: [{ pid, id, name, color, isBot }] }` (low-frequency)
     - State payload: either `players` (full, periodic) or `playersD/playersGone` (delta)
@@ -258,18 +263,49 @@ Endpoint:
 
 Optional params:
 - `fmt=array` (compact arrays instead of objects)
+- `fmt=bin` (binary state frames; `hello/players:meta/leaderboard` stay JSON)
 - `debug=1` (include a `debug` field in state frames)
 
 Messages:
 - `hello { proto, room, serverTs, formats, fmt, debug }`
 - `state { proto, roomId, ts, seq, fullPlayers, fullPellets, playersMeta?, players|playersD|playersGone, pellets|pelletsD|pelletsGone, leaderboard? }`
 
-Client  server control (optional):
+Client <-> server control (optional):
 - Send `{"type":"resync"}` to force a full snapshot on the next tick.
 
 Array format layouts:
 - `players`: `[pid, x, y, r10, score]`
-- `pellets`: `[id, x, y, r10]`
+- `pellets`: `[idNum, x, y, r10]` (where `id = "p" + idNum`)
+- `pelletsGone`: `[idNum, ...]`
+
+Binary format (`fmt=bin`):
+- `hello`, `players:meta`, and `leaderboard` are still JSON messages.
+- The state frame itself is a **binary WebSocket message** (little-endian), with the same semantics as the JSON/array `state` payload:
+  - `seq` is still used for gap detection; client can send `{"type":"resync"}` to force a full snapshot.
+
+Binary frame layout (v1):
+- Header:
+  - `u32 magic` = `0x474c5731` (ASCII-ish "1WLG")
+  - `u8 proto` = `1`
+  - `u8 flags`: bit0=`fullPlayers`, bit1=`fullPellets`
+  - `u16 reserved`
+  - `u32 seq`
+  - `f64 ts`
+  - `u8 rulesIdCode` (0=`agar-lite`, 1=`agar-advanced`, 2=`paper-lite`, 255=unknown)
+  - `u8[3] reserved2`
+- Players section:
+  - `u16 playersCount`
+  - Repeated `playersCount` times: `u16 pid, i32 x, i32 y, u16 r10, u32 score`
+  - `u16 playersGoneCount`
+  - Repeated `playersGoneCount` times: `u16 pid`
+- Pellets section:
+  - `u16 pelletsCount`
+  - Repeated `pelletsCount` times: `u32 idNum, i32 x, i32 y, u16 r10, u16 pad`
+  - `u16 pelletsGoneCount`
+  - Repeated `pelletsGoneCount` times: `u32 idNum`
+
+Notes:
+- On the wire, pellet ids are encoded as `idNum` and client reconstructs `id` as `"p" + idNum`.
 
 ## Donate / Support
 If this project helps you, consider supporting it:

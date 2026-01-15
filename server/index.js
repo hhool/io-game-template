@@ -313,9 +313,24 @@ wss.on('connection', (ws, req) => {
 
   // Optional compact format for WS: ?fmt=array
   // - default: object payloads (backward compatible)
-  // - array: players as [pid,x,y,r10,score], pellets as [id,x,y,r10]
+  // - array: players as [pid,x,y,r10,score], pellets as [idNum,x,y,r10] where id = 'p' + idNum
+  // - bin: custom binary state frames (meta/leaderboard still JSON)
   const fmt = String(url.searchParams.get('fmt') || '').trim().toLowerCase();
   const useArrayFmt = fmt === 'array';
+  const useBinFmt = fmt === 'bin' || fmt === 'binary';
+
+  function pelletIdToNum(id) {
+    const s = String(id || '');
+    if (!s || s[0] !== 'p') return null;
+    const n = Number(s.slice(1));
+    if (!Number.isFinite(n)) return null;
+    return n >>> 0;
+  }
+
+  function pelletIdToArrayId(id) {
+    const n = pelletIdToNum(id);
+    return n == null ? id : n;
+  }
 
   // Optional debug extras: ?debug=1
   const debug = (() => {
@@ -334,8 +349,8 @@ wss.on('connection', (ws, req) => {
       proto: WS_PROTO,
       room: rooms.getRoomInfo(room.id),
       serverTs: Date.now(),
-      formats: { default: 'object', supported: ['object', 'array'] },
-      fmt: useArrayFmt ? 'array' : 'object',
+      formats: { default: 'object', supported: ['object', 'array', 'bin'] },
+      fmt: useBinFmt ? 'bin' : useArrayFmt ? 'array' : 'object',
       debug
     })
   );
@@ -378,6 +393,98 @@ wss.on('connection', (ws, req) => {
     }
   });
 
+  function rulesIdToCode(rulesId) {
+    if (rulesId === 'agar-lite') return 0;
+    if (rulesId === 'agar-advanced') return 1;
+    if (rulesId === 'paper-lite') return 2;
+    return 255;
+  }
+
+  function encodeStateBin({ seq, ts, rulesIdCode, fullPlayers, fullPellets, playersList, playersGone, pelletsList, pelletsGone }) {
+    // Binary format v1 (little-endian):
+    // u32 magic('1WLG'), u8 proto(=1), u8 flags, u16 reserved,
+    // u32 seq, f64 ts, u8 rulesIdCode, u8 reserved2[3]
+    // u16 playersCount, players[pid:u16,x:i32,y:i32,r10:u16,score:u32], u16 playersGoneCount, gone[pid:u16]
+    // u16 pelletsCount, pellets[idNum:u32,x:i32,y:i32,r10:u16,pad:u16], u16 pelletsGoneCount, gone[idNum:u32]
+
+    const playersCount = playersList.length;
+    const playersGoneCount = playersGone.length;
+    const pelletsCount = pelletsList.length;
+    const pelletsGoneCount = pelletsGone.length;
+
+    const headerSize = 4 + 1 + 1 + 2 + 4 + 8 + 1 + 3;
+    const playersSectionSize = 2 + playersCount * 16 + 2 + playersGoneCount * 2;
+    const pelletsSectionSize = 2 + pelletsCount * 16 + 2 + pelletsGoneCount * 4;
+    const buf = Buffer.allocUnsafe(headerSize + playersSectionSize + pelletsSectionSize);
+
+    let o = 0;
+    buf.writeUInt32LE(0x474c5731, o);
+    o += 4;
+    buf.writeUInt8(WS_PROTO, o);
+    o += 1;
+    let flags = 0;
+    if (fullPlayers) flags |= 1;
+    if (fullPellets) flags |= 2;
+    buf.writeUInt8(flags, o);
+    o += 1;
+    buf.writeUInt16LE(0, o);
+    o += 2;
+    buf.writeUInt32LE(seq >>> 0, o);
+    o += 4;
+    buf.writeDoubleLE(ts, o);
+    o += 8;
+    buf.writeUInt8(rulesIdCode, o);
+    o += 1;
+    buf.writeUInt8(0, o);
+    buf.writeUInt8(0, o + 1);
+    buf.writeUInt8(0, o + 2);
+    o += 3;
+
+    buf.writeUInt16LE(playersCount, o);
+    o += 2;
+    for (const p of playersList) {
+      buf.writeUInt16LE(p.pid & 0xffff, o);
+      o += 2;
+      buf.writeInt32LE(p.x | 0, o);
+      o += 4;
+      buf.writeInt32LE(p.y | 0, o);
+      o += 4;
+      buf.writeUInt16LE(p.r10 & 0xffff, o);
+      o += 2;
+      buf.writeUInt32LE((p.score >>> 0) || 0, o);
+      o += 4;
+    }
+    buf.writeUInt16LE(playersGoneCount, o);
+    o += 2;
+    for (const pid of playersGone) {
+      buf.writeUInt16LE((pid >>> 0) & 0xffff, o);
+      o += 2;
+    }
+
+    buf.writeUInt16LE(pelletsCount, o);
+    o += 2;
+    for (const pel of pelletsList) {
+      buf.writeUInt32LE(pel.idNum >>> 0, o);
+      o += 4;
+      buf.writeInt32LE(pel.x | 0, o);
+      o += 4;
+      buf.writeInt32LE(pel.y | 0, o);
+      o += 4;
+      buf.writeUInt16LE(pel.r10 & 0xffff, o);
+      o += 2;
+      buf.writeUInt16LE(0, o);
+      o += 2;
+    }
+    buf.writeUInt16LE(pelletsGoneCount, o);
+    o += 2;
+    for (const idNum of pelletsGone) {
+      buf.writeUInt32LE(idNum >>> 0, o);
+      o += 4;
+    }
+
+    return buf;
+  }
+
   const interval = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     const snap = rooms.getRoomSnapshot(room.id);
@@ -390,19 +497,21 @@ wss.on('connection', (ws, req) => {
     const idByPid = room._idByPid || (room._idByPid = new Map());
     if (!Number.isFinite(room._pidSeq)) room._pidSeq = 1;
 
-    const payload = {
-      type: 'state',
-      proto: WS_PROTO,
-      roomId: room.id,
-      seq: ++seq,
-      ts: snap.ts
-    };
+    const nextSeq = ++seq;
 
     // Leaderboard (1Hz)
     const includeLeaderboard = !lastLeaderboardSentAt || now - lastLeaderboardSentAt >= LEADERBOARD_SEND_EVERY_MS;
     if (includeLeaderboard) {
-      payload.leaderboard = rooms.computeLeaderboard(room);
+      const top = rooms.computeLeaderboard(room);
       lastLeaderboardSentAt = now;
+      // For binary fmt, send leaderboard as JSON message.
+      if (useBinFmt) {
+        try {
+          ws.send(JSON.stringify({ type: 'leaderboard', roomId: room.id, top }));
+        } catch {
+          // ignore
+        }
+      }
     }
 
     // Players meta + pid mapping (low frequency + on change)
@@ -447,10 +556,22 @@ wss.on('connection', (ws, req) => {
     const metaDue = forceMeta || !lastPlayersMetaSentAt || now - lastPlayersMetaSentAt >= PLAYERS_META_SEND_EVERY_MS;
     if (metaDue) {
       lastPlayersMetaSentAt = now;
-      payload.playersMeta = allMeta;
+      if (useBinFmt) {
+        try {
+          ws.send(JSON.stringify({ type: 'players:meta', roomId: room.id, players: allMeta }));
+        } catch {
+          // ignore
+        }
+      }
       forceMeta = false;
     } else if (metaChanged.length) {
-      payload.playersMeta = metaChanged;
+      if (useBinFmt) {
+        try {
+          ws.send(JSON.stringify({ type: 'players:meta', roomId: room.id, players: metaChanged }));
+        } catch {
+          // ignore
+        }
+      }
     }
 
     // Players slim
@@ -492,25 +613,24 @@ wss.on('connection', (ws, req) => {
     if (sendFullPlayers) {
       lastPlayersFullSentAt = now;
       forceFullPlayers = false;
-      payload.fullPlayers = true;
-      payload.players = useArrayFmt ? slimPlayers.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : slimPlayers;
-    } else {
-      payload.fullPlayers = false;
-      if (playersD.length) payload.playersD = useArrayFmt ? playersD.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : playersD;
-      if (playersGone.length) payload.playersGone = playersGone;
     }
 
     // Pellets delta (4s full)
     const snapPellets = Array.isArray(snap.pellets) ? snap.pellets : [];
     const sendFullPellets = forceFullPellets || !lastPelletsFullSentAt || now - lastPelletsFullSentAt >= PELLETS_FULL_SEND_EVERY_MS || pelletsCache.size === 0;
 
+    /** @type {Array<{id:string,x:number,y:number,r10:number}>|null} */
+    let pelletsFull = null;
+    /** @type {Array<{id:string,x:number,y:number,r10:number}>|null} */
+    let pelletsDLocal = null;
+    /** @type {string[]|null} */
+    let pelletsGoneLocal = null;
+
     if (sendFullPellets) {
       lastPelletsFullSentAt = now;
       forceFullPellets = false;
-      payload.fullPellets = true;
 
       pelletsCache.clear();
-      const full = [];
       for (const pel of snapPellets) {
         if (!pel?.id) continue;
         const q = {
@@ -520,11 +640,10 @@ wss.on('connection', (ws, req) => {
           r10: Math.round(Number(pel.r) * 10)
         };
         pelletsCache.set(q.id, q);
-        full.push(q);
       }
-      payload.pellets = useArrayFmt ? full.map((p) => [p.id, p.x, p.y, p.r10]) : full;
+
+      pelletsFull = Array.from(pelletsCache.values());
     } else {
-      payload.fullPellets = false;
       const seen = new Set();
       const changed = [];
 
@@ -552,8 +671,104 @@ wss.on('connection', (ws, req) => {
         }
       }
 
-      if (changed.length) payload.pelletsD = useArrayFmt ? changed.map((p) => [p.id, p.x, p.y, p.r10]) : changed;
-      if (gone.length) payload.pelletsGone = gone;
+      pelletsDLocal = changed;
+      pelletsGoneLocal = gone;
+    }
+
+    if (useBinFmt) {
+      const rulesIdCode = rulesIdToCode(snap.rulesId);
+
+      const playersList = sendFullPlayers ? slimPlayers : playersD;
+      const playersGoneList = sendFullPlayers ? [] : playersGone;
+
+      const pelletsList = [];
+      const pelletsGone = [];
+
+      const src = sendFullPellets ? pelletsFull || [] : pelletsDLocal || [];
+      for (const q of src) {
+        const idNum = Number(String(q.id).slice(1));
+        if (!Number.isFinite(idNum)) continue;
+        pelletsList.push({ idNum, x: q.x, y: q.y, r10: q.r10 });
+      }
+
+      if (!sendFullPellets) {
+        for (const id of pelletsGoneLocal || []) {
+          const idNum = Number(String(id).slice(1));
+          if (!Number.isFinite(idNum)) continue;
+          pelletsGone.push(idNum >>> 0);
+        }
+      }
+
+      const bin = encodeStateBin({
+        seq: nextSeq,
+        ts: snap.ts,
+        rulesIdCode,
+        fullPlayers: Boolean(sendFullPlayers),
+        fullPellets: Boolean(sendFullPellets),
+        playersList,
+        playersGone: playersGoneList,
+        pelletsList,
+        pelletsGone
+      });
+
+      ws.send(bin);
+
+      if (debug) {
+        try {
+          ws.send(
+            JSON.stringify({
+              type: 'debug',
+              roomId: room.id,
+              seq: nextSeq,
+              players: snapPlayers.length,
+              pellets: snapPellets.length,
+              cachePlayers: playersStateCache.size,
+              cachePellets: pelletsCache.size,
+              fmt: 'bin'
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      return;
+    }
+
+    // JSON state frame (object/array)
+    const payload = {
+      type: 'state',
+      proto: WS_PROTO,
+      roomId: room.id,
+      seq: nextSeq,
+      ts: snap.ts,
+      rulesId: snap.rulesId
+    };
+
+    if (includeLeaderboard) payload.leaderboard = rooms.computeLeaderboard(room);
+
+    if (metaDue) payload.playersMeta = allMeta;
+    else if (metaChanged.length) payload.playersMeta = metaChanged;
+
+    if (sendFullPlayers) {
+      payload.fullPlayers = true;
+      payload.players = useArrayFmt ? slimPlayers.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : slimPlayers;
+    } else {
+      payload.fullPlayers = false;
+      if (playersD.length) payload.playersD = useArrayFmt ? playersD.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : playersD;
+      if (playersGone.length) payload.playersGone = playersGone;
+    }
+
+    if (sendFullPellets) {
+      payload.fullPellets = true;
+      const full = pelletsFull || [];
+      payload.pellets = useArrayFmt ? full.map((p) => [pelletIdToArrayId(p.id), p.x, p.y, p.r10]) : full;
+    } else {
+      payload.fullPellets = false;
+      const changed = pelletsDLocal || [];
+      const gone = pelletsGoneLocal || [];
+      if (changed.length) payload.pelletsD = useArrayFmt ? changed.map((p) => [pelletIdToArrayId(p.id), p.x, p.y, p.r10]) : changed;
+      if (gone.length) payload.pelletsGone = useArrayFmt ? gone.map((id) => pelletIdToArrayId(id)) : gone;
     }
 
     if (debug) {

@@ -77,6 +77,7 @@ npm run dev
 
 前端启用（浏览器 URL 参数）：
 - `/?state=ws&wsFmt=array`（状态走 `/ws`，其它仍走 Socket.IO）
+- `/?state=ws&wsFmt=bin`（状态走 `/ws` 的二进制下行，比 JSON/array 更省）
 - `&wsDebug=1`（WS state 里带额外 debug 字段）
 
 ## 控制配置（输入方式开关/模式）
@@ -195,7 +196,7 @@ URL 传参快速测试（不持久化）：
 按进展维护：完成一项就把对应的 `- [ ]` 改成 `- [x]`。
 
 ### P0（可玩性闭环）
-- [ ] 吞噬/成长规则（豆子 + 玩家）
+- [x] 吞噬/成长规则（豆子 + 玩家）
 - [ ] 死亡与重生闭环
 - [ ] 视野缩放（随体型变化）+ 小地图同步
 - [ ] 基础 HUD（人数/延迟/FPS）+ 设置面板（小地图/Bots/手感）
@@ -246,6 +247,10 @@ URL 传参快速测试（不持久化）：
 状态同步已做带宽优化：
 - `state { roomId, rulesId, ts, seq, ... }`: 房间状态快照
 	- `seq`：房间内单调递增序号（用于检测丢包/缺 delta）
+	- 吞噬/成长为服务端权威，表现为：
+		- 被吃掉的豆子会通过 `pelletsGone` 消失（或在下一次全量 `pellets` 中缺失）
+		- 被吞噬的玩家会通过 `playersGone` 消失（死亡事件仍走控制面通道）
+		- 吞噬者后续的 `players`/`playersD` 中 `r10` 与 `score` 会增长
 	- 玩家同步使用 **pid 映射 + delta**：
 		- Meta：`players:meta { roomId, players: [{ pid, id, name, color, isBot }] }`（低频）
 		- State：定期全量 `players`，其它 tick 发 `playersD/playersGone`
@@ -264,18 +269,53 @@ URL 传参快速测试（不持久化）：
 
 可选参数：
 - `fmt=array`（用数组格式发送，更紧凑）
+- `fmt=bin`（state 使用二进制帧；`hello/players:meta/leaderboard` 仍用 JSON）
 - `debug=1`（state 里带 `debug` 字段）
 
 消息：
 - `hello { proto, room, serverTs, formats, fmt, debug }`
 - `state { proto, roomId, ts, seq, fullPlayers, fullPellets, playersMeta?, players|playersD|playersGone, pellets|pelletsD|pelletsGone, leaderboard? }`
 
-客户端  服务端控制（可选）：
+客户端 <-> 服务端控制（可选）：
 - 发送 `{"type":"resync"}`，下一帧强制下发一次全量快照。
 
 数组格式约定：
 - `players`: `[pid, x, y, r10, score]`
-- `pellets`: `[id, x, y, r10]`
+- `pellets`: `[idNum, x, y, r10]`（其中 `id = "p" + idNum`）
+- `pelletsGone`: `[idNum, ...]`
+
+二进制格式（`fmt=bin`）：
+- `hello`、`players:meta`、`leaderboard` 仍然是 JSON 消息。
+- `state` 本体会通过 WebSocket 发送 **二进制帧**（little-endian），语义与 JSON/array 的 `state` 一致：
+
+  - 仍然使用 `seq` 做丢包/跳包检测；客户端可发送 `{"type":"resync"}` 强制下一帧全量。
+
+二进制帧布局（v1）：
+- Header：
+
+  - `u32 magic` = `0x474c5731`（近似 ASCII "1WLG"）
+  - `u8 proto` = `1`
+  - `u8 flags`：bit0=`fullPlayers`，bit1=`fullPellets`
+  - `u16 reserved`
+  - `u32 seq`
+  - `f64 ts`
+  - `u8 rulesIdCode`（0=`agar-lite`，1=`agar-advanced`，2=`paper-lite`，255=unknown）
+  - `u8[3] reserved2`
+- Players 段：
+
+  - `u16 playersCount`
+  - 重复 `playersCount` 次：`u16 pid, i32 x, i32 y, u16 r10, u32 score`
+  - `u16 playersGoneCount`
+  - 重复 `playersGoneCount` 次：`u16 pid`
+- Pellets 段：
+
+  - `u16 pelletsCount`
+  - 重复 `pelletsCount` 次：`u32 idNum, i32 x, i32 y, u16 r10, u16 pad`
+  - `u16 pelletsGoneCount`
+  - 重复 `pelletsGoneCount` 次：`u32 idNum`
+
+说明：
+- pellet 的 `id` 在线上会编码为 `idNum`，客户端会按 `"p" + idNum` 还原。
 
 ## 捐赠 / 支持
 如果这个项目对你有帮助，欢迎支持：
