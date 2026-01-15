@@ -10,13 +10,30 @@ const meEl = document.getElementById("me");
 const roomEl = document.getElementById("room");
 const fpsEl = document.getElementById("fps");
 const lbEl = document.getElementById("lb");
+const lbBoardEl = document.getElementById("lbBoard");
+const btnLbToggle = document.getElementById("btnLbToggle");
+const hudRulesEl = document.getElementById("hudRules");
+const lbColNameEl = document.getElementById("lbColName");
+const lbColScoreEl = document.getElementById("lbColScore");
+const playersColNameEl = document.getElementById("playersColName");
+const playersColScoreEl = document.getElementById("playersColScore");
+const infoBoardEl = document.getElementById("infoBoard");
+const infoTitleEl = document.getElementById("infoTitle");
+const btnInfoToggle = document.getElementById("btnInfoToggle");
+const infoLabelPingEl = document.getElementById("infoLabelPing");
+const infoLabelFpsEl = document.getElementById("infoLabelFps");
+const infoLabelPlayersEl = document.getElementById("infoLabelPlayers");
+const infoLabelPelletsEl = document.getElementById("infoLabelPellets");
+const infoLabelYouEl = document.getElementById("infoLabelYou");
+const hudPingEl = document.getElementById("hudPing");
+const hudPlayersCountEl = document.getElementById("hudPlayersCount");
+const hudPelletsCountEl = document.getElementById("hudPelletsCount");
+const hudYouScoreEl = document.getElementById("hudYouScore");
 const playersBoardEl = document.getElementById("playersBoard");
 const playersTitleEl = document.getElementById("playersTitle");
 const playersEl = document.getElementById("players");
 const btnPlayersToggle = document.getElementById("btnPlayersToggle");
 
-const btnQuick = document.getElementById("btnQuick");
-const btnSpectate = document.getElementById("btnSpectate");
 const btnLeave = document.getElementById("btnLeave");
 
 const langSel = document.getElementById("lang");
@@ -403,6 +420,12 @@ const I18N = {
     touchGuidePoint: "Hold to steer",
     leaderboard: "Leaderboard",
     players: "Players",
+    gameInfo: "Game Info",
+    labelPing: "Ping",
+    labelFps: "FPS",
+    labelPlayersCount: "Players",
+    labelPellets: "Pellets",
+    labelYou: "You",
     joining: "Joining…",
     loginWait: "Waiting for server…",
     connecting: "connecting…",
@@ -438,6 +461,12 @@ const I18N = {
     touchGuidePoint: "Удерживайте для управления",
     leaderboard: "Таблица лидеров",
     players: "Игроки",
+    gameInfo: "Информация",
+    labelPing: "Пинг",
+    labelFps: "FPS",
+    labelPlayersCount: "Игроки",
+    labelPellets: "Еда",
+    labelYou: "Вы",
     joining: "Входим…",
     loginWait: "Ожидание сервера…",
     connecting: "подключение…",
@@ -473,6 +502,12 @@ const I18N = {
     touchGuidePoint: "Maintenez pour diriger",
     leaderboard: "Classement",
     players: "Joueurs",
+    gameInfo: "Infos de jeu",
+    labelPing: "Ping",
+    labelFps: "FPS",
+    labelPlayersCount: "Joueurs",
+    labelPellets: "Granules",
+    labelYou: "Vous",
     joining: "Connexion…",
     loginWait: "En attente du serveur…",
     connecting: "connexion…",
@@ -508,6 +543,12 @@ const I18N = {
     touchGuidePoint: "按住控制方向",
     leaderboard: "排行榜",
     players: "玩家",
+    gameInfo: "游戏信息",
+    labelPing: "延迟",
+    labelFps: "FPS",
+    labelPlayersCount: "玩家",
+    labelPellets: "食物",
+    labelYou: "你",
     joining: "正在进入…",
     loginWait: "等待服务器响应…",
     connecting: "连接中…",
@@ -543,6 +584,12 @@ const I18N = {
     touchGuidePoint: "Halten zum Steuern",
     leaderboard: "Rangliste",
     players: "Spieler",
+    gameInfo: "Spielinfo",
+    labelPing: "Ping",
+    labelFps: "FPS",
+    labelPlayersCount: "Spieler",
+    labelPellets: "Pellets",
+    labelYou: "Du",
     joining: "Beitreten…",
     loginWait: "Warte auf Server…",
     connecting: "verbinde…",
@@ -578,6 +625,12 @@ const I18N = {
     touchGuidePoint: "اضغط للتوجيه",
     leaderboard: "لوحة الصدارة",
     players: "اللاعبون",
+    gameInfo: "معلومات اللعبة",
+    labelPing: "بينغ",
+    labelFps: "FPS",
+    labelPlayersCount: "اللاعبون",
+    labelPellets: "الحبيبات",
+    labelYou: "أنت",
     joining: "جارٍ الدخول…",
     loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
@@ -594,8 +647,8 @@ let profile = loadProfile();
 let lang = I18N[profile.lang] ? profile.lang : "en";
 let nick = sanitizeNick(profile.nick);
 let profileConfirmed = false;
-let autoQuickRequested = false;
 let joinInFlight = false;
+let joinRequested = false;
 let socket = null;
 
 // --- Runtime state (declare early to avoid TDZ when applyLang/applyConfig run) ---
@@ -1112,24 +1165,50 @@ function t(key) {
 function applyLang() {
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-  loginTitleEl.textContent = t("loginTitle");
-  labelLangEl.textContent = t("labelLang");
-  labelNickEl.textContent = t("labelNick");
+  if (loginTitleEl) loginTitleEl.textContent = t("loginTitle");
+  if (labelLangEl) labelLangEl.textContent = t("labelLang");
+  if (labelNickEl) labelNickEl.textContent = t("labelNick");
   if (labelRulesEl) labelRulesEl.textContent = t("labelRules");
-  nickInput.placeholder = t("nickPlaceholder");
-  btnLogin.textContent = t("enter");
+  if (nickInput) nickInput.placeholder = t("nickPlaceholder");
+  if (btnLogin) btnLogin.textContent = t("enter");
 
-  hudTitleEl.textContent = t("hudTitle");
-  btnQuick.textContent = t("quick");
-  btnSpectate.textContent = t("spectate");
-  btnLeave.textContent = t("leave");
+  if (hudTitleEl) hudTitleEl.textContent = t("hudTitle");
+  if (btnLeave) btnLeave.textContent = t("leave");
   // Hint depends on current input scheme
-  if (joystick.enabled) hintEl.textContent = t("hintTouch");
-  else if (pointControl.enabled) hintEl.textContent = t("hintTouchPoint");
-  else if (inputModel.useMouse) hintEl.textContent = t("hintMouse") || t("hint");
-  else hintEl.textContent = t("hint");
-  lbTitleEl.textContent = t("leaderboard");
+  if (hintEl) {
+    if (joystick.enabled) hintEl.textContent = t("hintTouch");
+    else if (pointControl.enabled) hintEl.textContent = t("hintTouchPoint");
+    else if (inputModel.useMouse) hintEl.textContent = t("hintMouse") || t("hint");
+    else hintEl.textContent = t("hint");
+  }
+  if (lbTitleEl) lbTitleEl.textContent = t("leaderboard");
   if (playersTitleEl) playersTitleEl.textContent = t("players");
+
+  if (lbColNameEl) lbColNameEl.textContent = t("labelNick");
+  if (lbColScoreEl) lbColScoreEl.textContent = t("score");
+  if (playersColNameEl) playersColNameEl.textContent = t("labelNick");
+  if (playersColScoreEl) playersColScoreEl.textContent = t("score");
+
+  if (infoTitleEl) infoTitleEl.textContent = t("gameInfo");
+  if (infoLabelPingEl) infoLabelPingEl.textContent = t("labelPing");
+  if (infoLabelFpsEl) infoLabelFpsEl.textContent = t("labelFps");
+  if (infoLabelPlayersEl) infoLabelPlayersEl.textContent = t("labelPlayersCount");
+  if (infoLabelPelletsEl) infoLabelPelletsEl.textContent = t("labelPellets");
+  if (infoLabelYouEl) infoLabelYouEl.textContent = t("labelYou");
+
+  if (btnLbToggle) {
+    const collapsed = lbBoardEl?.classList?.contains("collapsed");
+    btnLbToggle.textContent = collapsed ? t("show") : t("hide");
+  }
+  if (btnPlayersToggle) {
+    const collapsed = playersBoardEl?.classList?.contains("collapsed");
+    btnPlayersToggle.textContent = collapsed ? t("show") : t("hide");
+  }
+
+  if (btnInfoToggle) {
+    const collapsed = infoBoardEl?.classList?.contains("collapsed");
+    btnInfoToggle.textContent = collapsed ? t("show") : t("hide");
+  }
 
   if (statsTitleEl) statsTitleEl.textContent = t("stats");
   if (bestTitleEl) bestTitleEl.textContent = t("best");
@@ -1142,9 +1221,39 @@ function applyLang() {
     btnStatsToggle.textContent = collapsed ? t("show") : t("hide");
   }
 
-  recentTitleEl.textContent = t("recent");
+  if (recentTitleEl) recentTitleEl.textContent = t("recent");
   renderStats();
   renderPlayersList(true);
+}
+
+function setInfoCollapsed(collapsed) {
+  if (!infoBoardEl || !btnInfoToggle) return;
+  const c = Boolean(collapsed);
+  infoBoardEl.classList.toggle("collapsed", c);
+  btnInfoToggle.setAttribute("aria-pressed", c ? "true" : "false");
+  btnInfoToggle.textContent = c ? t("show") : t("hide");
+}
+
+if (btnInfoToggle) {
+  btnInfoToggle.addEventListener("click", () => {
+    const collapsed = infoBoardEl?.classList?.contains("collapsed");
+    setInfoCollapsed(!collapsed);
+  });
+}
+
+function setLeaderboardCollapsed(collapsed) {
+  if (!lbBoardEl || !btnLbToggle) return;
+  const c = Boolean(collapsed);
+  lbBoardEl.classList.toggle("collapsed", c);
+  btnLbToggle.setAttribute("aria-pressed", c ? "true" : "false");
+  btnLbToggle.textContent = c ? t("show") : t("hide");
+}
+
+if (btnLbToggle) {
+  btnLbToggle.addEventListener("click", () => {
+    const collapsed = lbBoardEl?.classList?.contains("collapsed");
+    setLeaderboardCollapsed(!collapsed);
+  });
 }
 
 function setStatsCollapsed(collapsed) {
@@ -1167,7 +1276,7 @@ function setPlayersCollapsed(collapsed) {
   const c = Boolean(collapsed);
   playersBoardEl.classList.toggle("collapsed", c);
   btnPlayersToggle.setAttribute("aria-pressed", c ? "true" : "false");
-  btnPlayersToggle.textContent = c ? "Show" : "Hide";
+  btnPlayersToggle.textContent = c ? t("show") : t("hide");
 }
 
 if (btnPlayersToggle) {
@@ -1196,7 +1305,12 @@ function renderPlayersList(force) {
     const name = typeof p?.name === "string" && p.name.trim() ? p.name.trim() : String(p?.id || "").slice(0, 6);
     const score = Number.isFinite(p?.score) ? p.score : 0;
     const botTag = p?.isBot ? " [bot]" : "";
-    li.textContent = `${name}${botTag}  score=${score}`;
+    const left = document.createElement("span");
+    left.textContent = `${name}${botTag}`;
+    const right = document.createElement("span");
+    right.textContent = `score=${score}`;
+    li.appendChild(left);
+    li.appendChild(right);
     if (p?.id && myId && p.id === myId) li.classList.add("me");
     playersEl.appendChild(li);
   }
@@ -1341,19 +1455,15 @@ function showLogin(message = "") {
   setLoginMessage(message || "");
   btnLogin.disabled = false;
   nickInput.disabled = false;
-  btnQuick.disabled = true;
-  btnSpectate.disabled = true;
   btnLeave.disabled = true;
   setRulesDisabled(false);
-  autoQuickRequested = false;
   joinInFlight = false;
+  joinRequested = false;
 }
 
 function showGame() {
   loginEl.classList.add("hidden");
   hudEl.classList.remove("hidden");
-  btnQuick.disabled = !profileConfirmed;
-  btnSpectate.disabled = false;
 }
 
 function setRulesDisabled(disabled) {
@@ -1468,16 +1578,17 @@ if (rulesSel) {
   hydrateRulesOptionsFromServer();
 }
 
-function tryAutoQuickMatch() {
-  if (!autoQuickRequested) return;
-  if (!socket.connected) return;
+function tryJoinRequested() {
+  if (!joinRequested) return;
+  if (!socket?.connected) return;
   if (!nick) return;
   if (!profileConfirmed) return;
   if (currentRoomId) return;
   if (joinInFlight) return;
-  autoQuickRequested = false;
+
+  joinRequested = false;
   joinInFlight = true;
-  pendingRulesId = getRulesIdSelected();
+  pendingRulesId = pendingRulesId || getRulesIdSelected();
   setRulesDisabled(true);
   socket.emit("mm:join", { mode: "play", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
 }
@@ -1507,19 +1618,19 @@ btnLogin.addEventListener("click", () => {
   nick = v;
   profile.nick = nick;
   saveProfile();
-  meEl.textContent = `nick: ${nick}`;
+  meEl.textContent = `${t("labelNick")}: ${nick}`;
   profileConfirmed = false;
-  btnQuick.disabled = true;
-  autoQuickRequested = true;
   joinInFlight = false;
+  joinRequested = true;
+  pendingRulesId = getRulesIdSelected();
   setLoginMessage(t("joining"));
   btnLogin.disabled = true;
   nickInput.disabled = true;
   socket.emit("profile:set", { nick });
 
   // Join will happen when the server confirms the nick (profile:ok/auth).
-  // We keep the login overlay visible until we actually join a room.
-  tryAutoQuickMatch();
+  // Keep the login overlay visible until we actually join a room.
+  tryJoinRequested();
 
   // If the server doesn't confirm quickly, show a useful hint instead of "nothing".
   setTimeout(() => {
@@ -1549,16 +1660,49 @@ socket = io(backendUrl, {
 function renderRoomLabel() {
   if (!currentRoomId) {
     roomEl.textContent = "";
+    if (hudRulesEl) hudRulesEl.textContent = "";
     return;
   }
-  const bits = [currentMode].filter(Boolean);
-  if (currentRulesId) bits.push(currentRulesId);
-  roomEl.textContent = bits.length ? `room: ${currentRoomId} (${bits.join(", ")})` : `room: ${currentRoomId}`;
+  roomEl.textContent = `room: ${currentRoomId}`;
+  if (hudRulesEl) hudRulesEl.textContent = `rules: ${currentRulesId ?? "-"}`;
+}
+
+function updateGameInfoFromSnapshot(snap) {
+  if (!snap) return;
+  if (hudPlayersCountEl) hudPlayersCountEl.textContent = String(Array.isArray(snap.players) ? snap.players.length : 0);
+  if (hudPelletsCountEl) hudPelletsCountEl.textContent = String(Array.isArray(snap.pellets) ? snap.pellets.length : 0);
+
+  if (hudYouScoreEl) {
+    let myScore = 0;
+    if (Array.isArray(snap.players) && myId) {
+      const me = snap.players.find((p) => p?.id === myId);
+      myScore = Number.isFinite(me?.score) ? me.score : 0;
+    }
+    hudYouScoreEl.textContent = String(myScore);
+  }
+}
+
+let pingMs = null;
+function setPingText(ms) {
+  if (!hudPingEl) return;
+  if (!Number.isFinite(ms)) {
+    hudPingEl.textContent = "-";
+    return;
+  }
+  hudPingEl.textContent = `${Math.max(0, Math.round(ms))}ms`;
 }
 
 const keys = new Set();
-window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
-window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener("keydown", (e) => {
+  const k = typeof e?.key === "string" ? e.key : "";
+  if (!k) return;
+  keys.add(k.toLowerCase());
+});
+window.addEventListener("keyup", (e) => {
+  const k = typeof e?.key === "string" ? e.key : "";
+  if (!k) return;
+  keys.delete(k.toLowerCase());
+});
 
 const activePointers = new Set();
 
@@ -1949,6 +2093,8 @@ socket.on("disconnect", () => {
     btnLogin.disabled = false;
     nickInput.disabled = false;
   }
+  pingMs = null;
+  setPingText(pingMs);
 });
 
 socket.on("connect_error", (err) => {
@@ -1986,13 +2132,12 @@ socket.on("auth", (payload) => {
   }
   if (payload?.nick) {
     profileConfirmed = true;
-    btnQuick.disabled = false;
-    tryAutoQuickMatch();
+    tryJoinRequested();
   }
   if (payload?.playerId) {
     myId = payload.playerId;
   }
-  if (nick) meEl.textContent = `nick: ${nick}`;
+  if (nick) meEl.textContent = `${t("labelNick")}: ${nick}`;
 });
 
 socket.on("hello", (payload) => {
@@ -2010,10 +2155,9 @@ socket.on("profile:ok", (payload) => {
     nick = sanitizeNick(payload.nick);
     profile.nick = nick;
     saveProfile();
-    meEl.textContent = `nick: ${nick}`;
+    meEl.textContent = `${t("labelNick")}: ${nick}`;
     profileConfirmed = true;
-    btnQuick.disabled = false;
-    tryAutoQuickMatch();
+    tryJoinRequested();
   }
 });
 
@@ -2090,6 +2234,9 @@ socket.on("room:left", () => {
   if (playersTitleEl) playersTitleEl.textContent = t("players");
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
   setRulesDisabled(false);
+
+  // Exit returns to login screen (user requested).
+  showLogin("");
 });
 
 socket.on("state", (snap) => {
@@ -2102,6 +2249,7 @@ socket.on("state", (snap) => {
   lastSnapshot = snap;
   renderDebugPanel(false);
   renderPlayersList(false);
+  updateGameInfoFromSnapshot(snap);
 });
 
 socket.on("leaderboard", (payload) => {
@@ -2111,10 +2259,30 @@ socket.on("leaderboard", (payload) => {
   for (const entry of top) {
     const li = document.createElement("li");
     const label = entry.name ? entry.name : entry.id.slice(0, 6);
-    li.textContent = `${label}  score=${entry.score}`;
+    const left = document.createElement("span");
+    left.textContent = label;
+    const right = document.createElement("span");
+    right.textContent = `score=${entry.score}`;
+    li.appendChild(left);
+    li.appendChild(right);
     lbEl.appendChild(li);
   }
 });
+
+// Lightweight ping measurement (server supports ack on sys:ping)
+setInterval(() => {
+  if (!socket?.connected) return;
+  const t0 = Date.now();
+  try {
+    socket.timeout(1500).emit("sys:ping", { t0 }, (err) => {
+      if (err) return;
+      pingMs = Date.now() - t0;
+      setPingText(pingMs);
+    });
+  } catch {
+    // ignore
+  }
+}, 2000);
 
 setInterval(() => {
   if (!socket.connected) return;
@@ -2123,34 +2291,10 @@ setInterval(() => {
   socket.emit("input", getAxis());
 }, 1000 / 30);
 
-btnQuick.addEventListener("click", () => {
-  if (!nick) {
-    showLogin(t("needNick"));
-    return;
-  }
-  if (!socket.connected) {
-    statusEl.textContent = `${t("notConnected")} (${backendUrl})`;
-    return;
-  }
-  if (currentRoomId || joinInFlight) return;
-  joinInFlight = true;
-  pendingRulesId = getRulesIdSelected();
-  setRulesDisabled(true);
-  socket.emit("mm:join", { mode: "play", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
-});
-
-btnSpectate.addEventListener("click", () => {
-  if (!socket.connected) {
-    statusEl.textContent = `${t("notConnected")} (${backendUrl})`;
-    return;
-  }
-  pendingRulesId = getRulesIdSelected();
-  setRulesDisabled(true);
-  socket.emit("mm:join", { mode: "spectate", rulesId: pendingRulesId, rulesConfig: rulesCfgFor(pendingRulesId) });
-});
-
 btnLeave.addEventListener("click", () => {
   socket.emit("room:leave");
+  // immediate UX: return to login overlay while waiting for room:left
+  showLogin("");
 });
 
 function lerp(a, b, t) {

@@ -74,31 +74,56 @@
     </div>
 
     <div class="hud hidden" id="hud">
-      <div class="title" id="hudTitle">1wlgame IO Prototype</div>
-      <div class="meta">
-        <span id="status">connecting…</span>
-        <span id="me"></span>
-        <span id="room"></span>
-        <span id="fps"></span>
-      </div>
-      <div class="actions">
-        <button id="btnQuick">Quick Match</button>
-        <button id="btnSpectate">Spectate</button>
-        <button id="btnLeave" disabled>Leave</button>
-      </div>
-      <div class="hint" id="hint">WASD/Arrow keys to move, Shift to boost (demo).</div>
-      <div class="board">
-        <div class="boardTitle" id="lbTitle">Leaderboard</div>
-        <ol id="lb"></ol>
+      <div class="hudHeader">
+        <div class="hudHeaderLine" id="me"></div>
+        <div class="hudHeaderLine" id="room"></div>
+        <div class="hudHeaderLine" id="hudRules"></div>
+        <div class="meta metaTiny">
+          <span id="status">connecting…</span>
+        </div>
+        <div class="hudExitRow">
+          <button id="btnLeave" class="hudExitBtn" type="button" disabled>Leave</button>
+        </div>
       </div>
 
-      <div class="board boardPlayers" id="playersBoard">
+      <div class="board collapsed" id="lbBoard">
+        <div class="boardTitleRow">
+          <div class="boardTitle" id="lbTitle">Leaderboard</div>
+          <button id="btnLbToggle" class="miniBtn" type="button" aria-pressed="true">Show</button>
+        </div>
+        <div class="boardCols" id="lbCols">
+          <span id="lbColName">Name</span>
+          <span id="lbColScore">Score</span>
+        </div>
+        <ol id="lb" class="boardList"></ol>
+      </div>
+
+      <div class="board boardPlayers collapsed" id="playersBoard">
         <div class="boardTitleRow">
           <div class="boardTitle" id="playersTitle">Players</div>
-          <button id="btnPlayersToggle" class="miniBtn" type="button" aria-pressed="false">Hide</button>
+          <button id="btnPlayersToggle" class="miniBtn" type="button" aria-pressed="true">Show</button>
         </div>
-        <ol id="players"></ol>
+        <div class="boardCols" id="playersCols">
+          <span id="playersColName">Name</span>
+          <span id="playersColScore">Score</span>
+        </div>
+        <ol id="players" class="boardList"></ol>
       </div>
+
+      <div class="board boardInfo collapsed" id="infoBoard">
+        <div class="boardTitleRow">
+          <div class="boardTitle" id="infoTitle">Game Info</div>
+          <button id="btnInfoToggle" class="miniBtn" type="button" aria-pressed="true">Show</button>
+        </div>
+        <div class="infoGrid" id="infoGrid">
+          <div class="infoRow"><span id="infoLabelPing">ping</span><span id="hudPing">-</span></div>
+          <div class="infoRow"><span id="infoLabelFps">fps</span><span id="fps">-</span></div>
+          <div class="infoRow"><span id="infoLabelPlayers">players</span><span id="hudPlayersCount">-</span></div>
+          <div class="infoRow"><span id="infoLabelPellets">pellets</span><span id="hudPelletsCount">-</span></div>
+          <div class="infoRow"><span id="infoLabelYou">you</span><span id="hudYouScore">-</span></div>
+        </div>
+      </div>
+
     </div>
 
     <div id="debugPanel" class="debugPanel hidden"></div>

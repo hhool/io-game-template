@@ -170,6 +170,11 @@ io.on('connection', (socket) => {
     socket.emit('profile:ok', { nick: session.nick });
   });
 
+  // Simple RTT measurement for HUD (client uses Socket.IO ack)
+  socket.on('sys:ping', (_payload = {}, cb) => {
+    if (typeof cb === 'function') cb({ ok: true, serverTs: Date.now() });
+  });
+
   // If session had a room, re-join it (spectate or play)
   if (session.roomId) {
     socket.join(session.roomId);
