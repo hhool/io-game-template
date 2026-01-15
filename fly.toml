@@ -1,0 +1,30 @@
+# Fly.io app config
+# Uses the Dockerfile at server/Dockerfile.
+# This repo expects PORT/HOST env vars; Fly will route public 80/443 to internal_port.
+
+app = "REPLACE_ME"
+primary_region = "sin"  # pick a nearby region later (e.g. nrt, hkg, sin)
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

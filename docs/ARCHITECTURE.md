@@ -26,6 +26,11 @@ Core lives in:
 - English: [DATA_FLOW.md](DATA_FLOW.md)
 - 中文: [DATA_FLOW.zh.md](DATA_FLOW.zh.md)
 
+## Deployment
+
+- English: [DEPLOYMENT.md](DEPLOYMENT.md)
+- 中文: [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md)
+
 ## AI notes
 
 - Learning record: [ai-notes/README.md](ai-notes/README.md)

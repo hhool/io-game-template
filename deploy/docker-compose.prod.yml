@@ -1,0 +1,40 @@
+services:
+  game:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: 6868
+      # Optional: enable Socket.IO redis adapter for horizontal scaling.
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # HTTPS reverse proxy.
+  # Set DOMAIN when running compose, e.g.:
+  #   DOMAIN=game.example.com docker compose -f docker-compose.prod.yml up -d --build
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - game
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
