@@ -4,6 +4,9 @@
   --text:#e6edf3;
   --muted:rgba(230,237,243,0.65);
   --accent:#4fc3f7;
+  /* Reserve vertical space for the fixed HUD toggle button so the HUD panel
+     always appears *below* it and won't be obstructed. */
+  --hud-fab-offset:46px;
 }
 
 html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 30%, #182026, var(--bg));color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;overflow:hidden}
@@ -21,7 +24,7 @@ canvas{
 .hud{
   position:fixed;
   left:calc(12px + env(safe-area-inset-left));
-  top:calc(12px + env(safe-area-inset-top));
+  top:calc(12px + env(safe-area-inset-top) + var(--hud-fab-offset));
   z-index:10;
   background:var(--panel);
   border:1px solid rgba(255,255,255,0.06);
@@ -31,9 +34,9 @@ canvas{
   max-width:320px;
   width:min(320px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   /* Constrain within the *visual* viewport (mobile browser UI can break plain 100vh). */
-  max-height:calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-height:calc(100svh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height:calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--hud-fab-offset));
+  max-height:calc(100svh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--hud-fab-offset));
+  max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--hud-fab-offset));
   overflow-y:auto;
   overflow-x:hidden;
   -webkit-overflow-scrolling:touch;
@@ -61,6 +64,8 @@ canvas{
 
 /* Coarse pointer (touch phones / WebViews): larger tap targets + avoid nested scrolling */
 @media (pointer: coarse){
+  :root{ --hud-fab-offset:56px; }
+
   .hud{
     padding:12px 12px;
     border-radius:12px;
