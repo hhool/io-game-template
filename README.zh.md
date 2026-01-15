@@ -213,8 +213,8 @@ window.gameControls.configure({ gameplay: { respawn: { enabled: false } } })
 ### P0（可玩性闭环）
 - [x] 吞噬/成长规则（豆子 + 玩家）
 - [x] 死亡与重生闭环
-- [ ] 视野缩放（随体型变化）+ 小地图同步
-- [ ] 基础 HUD（人数/延迟/FPS）+ 设置面板（小地图/Bots/手感）
+- [ ] 视野缩放（随体型变化）
+- [ ] 基础 HUD（人数/延迟/FPS）+ 设置面板（Bots/手感/输入）
 
 ### P1（Agar 向扩展）
 - [ ] 分裂 + 合并冷却

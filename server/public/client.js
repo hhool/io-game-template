@@ -253,14 +253,23 @@ function loadProfile() {
   try {
     const raw = storageGet(STORAGE_PROFILE);
     const parsed = raw ? JSON.parse(raw) : {};
-    return {
-      nick: typeof parsed.nick === "string" ? parsed.nick : "",
-      bestScore: Number.isFinite(parsed.bestScore) ? parsed.bestScore : 0,
-      history: Array.isArray(parsed.history) ? parsed.history : [],
-      lang: typeof parsed.lang === "string" ? parsed.lang : "en",
-    };
+    const p = parsed && typeof parsed === "object" ? parsed : {};
+
+    // Preserve unknown fields to support forward-compatible client prefs.
+    const out = { ...p };
+
+    out.nick = typeof p.nick === "string" ? p.nick : "";
+    out.bestScore = Number.isFinite(p.bestScore) ? p.bestScore : 0;
+    out.bestAt = Number.isFinite(p.bestAt) ? p.bestAt : 0;
+    out.history = Array.isArray(p.history) ? p.history : [];
+    out.lang = typeof p.lang === "string" ? p.lang : "en";
+
+    // Default: after login success, do NOT show HUD content unless the user opens it.
+    out.hudPanelHidden = typeof p.hudPanelHidden === "boolean" ? p.hudPanelHidden : true;
+
+    return out;
   } catch {
-    return { nick: "", bestScore: 0, history: [], lang: "en" };
+    return { nick: "", bestScore: 0, bestAt: 0, history: [], lang: "en", hudPanelHidden: true };
   }
 }
 
@@ -732,11 +741,30 @@ let joinInFlight = false;
 let joinRequested = false;
 let socket = null;
 
-function setHudPanelHidden(hidden) {
-  const h = Boolean(hidden);
-  hudPanelHidden = h;
-  profile.hudPanelHidden = h;
+function hudBoardsPrefs() {
+  const hb = profile && typeof profile === "object" ? profile.hudBoards : null;
+  return {
+    lbCollapsed: typeof hb?.lbCollapsed === "boolean" ? hb.lbCollapsed : true,
+    playersCollapsed: typeof hb?.playersCollapsed === "boolean" ? hb.playersCollapsed : true,
+    infoCollapsed: typeof hb?.infoCollapsed === "boolean" ? hb.infoCollapsed : true,
+  };
+}
+
+function saveHudBoardsPrefs(patch) {
+  if (!profile || typeof profile !== "object") return;
+  const prev = profile.hudBoards && typeof profile.hudBoards === "object" ? profile.hudBoards : {};
+  profile.hudBoards = { ...prev, ...(patch || {}) };
   saveProfile();
+}
+
+function setHudPanelHidden(hidden, opts) {
+  const h = Boolean(hidden);
+  const persist = opts && typeof opts === "object" && "persist" in opts ? Boolean(opts.persist) : true;
+  hudPanelHidden = h;
+  if (persist) {
+    profile.hudPanelHidden = h;
+    saveProfile();
+  }
 
   if (hudEl) hudEl.classList.toggle("hidden", h);
   if (btnHudToggle) {
@@ -1427,12 +1455,25 @@ if (btnMinimapToggle) {
   });
 }
 
-function setInfoCollapsed(collapsed) {
+function setInfoCollapsed(collapsed, opts) {
   if (!infoBoardEl || !btnInfoToggle) return;
+  const persist = opts && typeof opts === "object" && "persist" in opts ? Boolean(opts.persist) : true;
   const c = Boolean(collapsed);
   infoBoardEl.classList.toggle("collapsed", c);
   btnInfoToggle.setAttribute("aria-pressed", c ? "true" : "false");
   btnInfoToggle.textContent = c ? t("show") : t("hide");
+  if (persist) saveHudBoardsPrefs({ infoCollapsed: c });
+}
+
+function bindBoardTitleRowToggle(boardEl, onToggle) {
+  if (!boardEl) return;
+  const row = boardEl.querySelector?.(".boardTitleRow");
+  if (!row) return;
+  row.addEventListener("click", (e) => {
+    // Keep the dedicated toggle button working without double-toggling.
+    if (e?.target && e.target.closest && e.target.closest("button")) return;
+    onToggle?.();
+  });
 }
 
 if (btnInfoToggle) {
@@ -1442,12 +1483,19 @@ if (btnInfoToggle) {
   });
 }
 
-function setLeaderboardCollapsed(collapsed) {
+bindBoardTitleRowToggle(infoBoardEl, () => {
+  const collapsed = infoBoardEl?.classList?.contains("collapsed");
+  setInfoCollapsed(!collapsed);
+});
+
+function setLeaderboardCollapsed(collapsed, opts) {
   if (!lbBoardEl || !btnLbToggle) return;
+  const persist = opts && typeof opts === "object" && "persist" in opts ? Boolean(opts.persist) : true;
   const c = Boolean(collapsed);
   lbBoardEl.classList.toggle("collapsed", c);
   btnLbToggle.setAttribute("aria-pressed", c ? "true" : "false");
   btnLbToggle.textContent = c ? t("show") : t("hide");
+  if (persist) saveHudBoardsPrefs({ lbCollapsed: c });
 }
 
 if (btnLbToggle) {
@@ -1456,6 +1504,11 @@ if (btnLbToggle) {
     setLeaderboardCollapsed(!collapsed);
   });
 }
+
+bindBoardTitleRowToggle(lbBoardEl, () => {
+  const collapsed = lbBoardEl?.classList?.contains("collapsed");
+  setLeaderboardCollapsed(!collapsed);
+});
 
 function setStatsCollapsed(collapsed) {
   if (!statsBodyEl || !btnStatsToggle) return;
@@ -1472,12 +1525,14 @@ if (btnStatsToggle) {
   });
 }
 
-function setPlayersCollapsed(collapsed) {
+function setPlayersCollapsed(collapsed, opts) {
   if (!playersBoardEl || !btnPlayersToggle) return;
+  const persist = opts && typeof opts === "object" && "persist" in opts ? Boolean(opts.persist) : true;
   const c = Boolean(collapsed);
   playersBoardEl.classList.toggle("collapsed", c);
   btnPlayersToggle.setAttribute("aria-pressed", c ? "true" : "false");
   btnPlayersToggle.textContent = c ? t("show") : t("hide");
+  if (persist) saveHudBoardsPrefs({ playersCollapsed: c });
 }
 
 if (btnPlayersToggle) {
@@ -1485,6 +1540,22 @@ if (btnPlayersToggle) {
     const collapsed = playersBoardEl?.classList?.contains("collapsed");
     setPlayersCollapsed(!collapsed);
   });
+}
+
+bindBoardTitleRowToggle(playersBoardEl, () => {
+  const collapsed = playersBoardEl?.classList?.contains("collapsed");
+  setPlayersCollapsed(!collapsed);
+});
+
+// Restore HUD collapse state from profile (does not change any info content).
+// Do this after the setters are defined so button labels stay consistent.
+try {
+  const p = hudBoardsPrefs();
+  setLeaderboardCollapsed(p.lbCollapsed, { persist: false });
+  setPlayersCollapsed(p.playersCollapsed, { persist: false });
+  setInfoCollapsed(p.infoCollapsed, { persist: false });
+} catch {
+  // ignore
 }
 
 let lastPlayersRenderAt = 0;
@@ -1669,7 +1740,9 @@ function showGame() {
   loginEl.classList.add("hidden");
   // Show the floating toggle, then apply saved HUD visibility.
   if (btnHudToggle) btnHudToggle.classList.remove("hidden");
-  setHudPanelHidden(Boolean(profile.hudPanelHidden));
+  // Default behavior on successful login: do NOT show HUD content.
+  // Users can open it via the floating HUD button.
+  setHudPanelHidden(true, { persist: false });
 }
 
 function setRulesDisabled(disabled) {

@@ -204,8 +204,8 @@ Maintain this list by checking items off as you ship.
 ### P0 (Playable loop)
 - [x] Eat / mass growth rules (pellets + players)
 - [x] Death + respawn loop
-- [ ] Camera zoom that scales with player size (and minimap sync)
-- [ ] Basic in-game HUD (players, ping, FPS) + settings panel for minimap/bots/movement
+- [ ] Camera zoom that scales with player size
+- [ ] Basic in-game HUD (players, ping, FPS) + settings panel for bots/movement/controls
 
 ### P1 (Agar-style features)
 - [ ] Split + merge cooldown
