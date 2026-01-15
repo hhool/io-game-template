@@ -126,7 +126,7 @@ console.log('[movement]', movement);
 
 const rooms = new RoomManager({
   tickHz: 30,
-  broadcastHz: 15,
+  broadcastHz: 10,
   world: { width: 2800, height: 1800 },
   movement,
   emptyRoomTtlMs: 60_000,
@@ -396,7 +396,7 @@ setInterval(() => {
     io.to(room.id).emit('state', payload);
     io.to(room.id).emit('leaderboard', { roomId: room.id, top: leaderboard });
   }
-}, Math.floor(1000 / 15));
+}, Math.floor(1000 / 10));
 
 function listenOnce(port) {
   return new Promise((resolve, reject) => {
