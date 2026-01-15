@@ -1,4 +1,57 @@
-# Deployment (Docker + domain)
+# Deployment
+
+## Final decision (dev_deploy)
+
+- Cloud provider: Render (Web Service).
+- Legacy cloud-provider config/scripts have been removed.
+
+## Deploy on Render
+
+Render supports WebSocket and works well with Socket.IO.
+
+### Option A: Render Web Service (Native Node, no Docker)
+
+1) Create service
+
+- Render Dashboard → New → **Web Service**
+- Connect your Git repo
+
+2) Configure commands
+
+- Build Command: `cd server && npm ci --omit=dev`
+- Start Command: `cd server && npm run start`
+
+3) Environment
+
+- `HOST=0.0.0.0`
+- `PORT` is injected by Render (the server should read `process.env.PORT`)
+- `REDIS_URL` (optional)
+
+4) Health check
+
+- Health Check Path: `/healthz`
+
+### Option B: Render Web Service (Docker)
+
+1) Create service
+
+- Render Dashboard → New → **Web Service**
+- Choose **Docker** runtime
+
+2) Dockerfile
+
+- Dockerfile path: `server/Dockerfile`
+
+3) Port & env
+
+- Set Render “Port” to `6868` (or keep it consistent with `PORT` if you override)
+- Set `HOST=0.0.0.0`
+
+4) Health check
+
+- Health Check Path: `/healthz`
+
+## Self-host (Docker + domain)
 
 This project runs as a single Node.js server that serves:
 

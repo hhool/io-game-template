@@ -1,5 +1,11 @@
 # 部署（Docker + 域名）
 
+## 最后确认（dev_deploy）
+
+- 云服务最终选用：Render（Web Service）。
+- 已移除历史云部署相关配置/记录。
+
+
 本项目是一个 Node.js 服务端，同时提供：
 
 - 静态客户端（HTTP）
@@ -32,6 +38,9 @@ Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket�
 - `PORT`：Render 会自动注入（通常无需手动设置；服务端会读取 `process.env.PORT`）
 - `REDIS_URL`（可选）：需要多实例横向扩容时再配（单实例不需要）
 
+建议（可选）：
+- Health Check Path：`/healthz`
+
 4）验证
 
 - 部署完成后，访问：`https://<你的render域名>/healthz`
@@ -59,6 +68,9 @@ Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket�
 	- Render “Port” 填 `6868`
 	- 或者在环境变量里设置 `PORT=<你在Render里填写的Port>`（两者保持一致）
 - 同时设置：`HOST=0.0.0.0`
+
+建议（可选）：
+- Health Check Path：`/healthz`
 
 4）验证
 

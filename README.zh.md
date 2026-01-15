@@ -18,6 +18,11 @@ License：MIT（见 [LICENSE](LICENSE)）。
 - Docs：
 	- `docs/`（架构说明）
 
+## 部署
+
+- Render（dev_deploy）：见 [docs/DEPLOYMENT.zh.md](docs/DEPLOYMENT.zh.md)
+- 自建（VPS + Caddy）：见 [docs/DEPLOYMENT.zh.md](docs/DEPLOYMENT.zh.md)
+
 ## 运行（无 Redis）
 ```bash
 cd server

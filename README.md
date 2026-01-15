@@ -18,6 +18,11 @@ License: MIT (see [LICENSE](LICENSE)).
 - Docs:
   - `docs/` (architecture notes)
 
+## Deployment
+
+- Render (dev_deploy): see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Self-host (VPS + Caddy): see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Run (no Redis)
 ```bash
 cd server
