@@ -753,6 +753,9 @@ let currentRoomId = null;
 let currentMode = null;
 let currentRulesId = null;
 let pendingRulesId = null;
+
+// Player meta is broadcast separately to reduce state payload size.
+const playersMeta = new Map();
 let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
@@ -2367,8 +2370,24 @@ socket.on("room:left", () => {
   statusEl.textContent = `${t("connected")} (${backendUrl})`;
   setRulesDisabled(false);
 
+  // Clear meta cache when leaving a room.
+  playersMeta.clear();
+
   // Exit returns to login screen (user requested).
   showLogin("");
+});
+
+socket.on("players:meta", (payload = {}) => {
+  if (payload?.roomId && currentRoomId && payload.roomId !== currentRoomId) return;
+  const list = Array.isArray(payload?.players) ? payload.players : [];
+  for (const p of list) {
+    if (!p?.id) continue;
+    playersMeta.set(p.id, {
+      name: typeof p.name === "string" ? p.name : "",
+      color: typeof p.color === "string" ? p.color : "",
+      isBot: Boolean(p.isBot),
+    });
+  }
 });
 
 socket.on("state", (snap) => {
@@ -2382,6 +2401,30 @@ socket.on("state", (snap) => {
   // Preserve the last known pellet list so rendering stays stable.
   if (snap && !Object.prototype.hasOwnProperty.call(snap, "pellets") && lastSnapshot?.pellets) {
     snap = { ...snap, pellets: lastSnapshot.pellets };
+  }
+
+  // Bandwidth optimization: server may omit player meta from `state.players`.
+  // Rehydrate from `players:meta` cache so the rest of the client can keep using p.name/p.color/p.isBot.
+  if (snap && Array.isArray(snap.players)) {
+    const ids = new Set();
+    const hydrated = snap.players.map((p) => {
+      const id = p?.id;
+      if (id) ids.add(id);
+      const meta = id ? playersMeta.get(id) : null;
+      return {
+        ...p,
+        name: meta?.name ?? p?.name ?? "",
+        color: meta?.color ?? p?.color ?? "",
+        isBot: meta?.isBot ?? Boolean(p?.isBot),
+      };
+    });
+
+    // Prune meta cache for players no longer present.
+    for (const id of playersMeta.keys()) {
+      if (!ids.has(id)) playersMeta.delete(id);
+    }
+
+    snap = { ...snap, players: hydrated };
   }
 
   prevSnapshot = lastSnapshot;

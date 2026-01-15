@@ -319,18 +319,26 @@ wss.on('connection', (ws, req) => {
   const PELLETS_SEND_EVERY_MS = 500;
   let lastPelletsSentAt = 0;
 
+  // Bandwidth control: leaderboard is also heavy. Stream it at a lower rate.
+  const LEADERBOARD_SEND_EVERY_MS = 1000;
+  let lastLeaderboardSentAt = 0;
+
   const interval = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     const snap = rooms.getRoomSnapshot(room.id);
     if (!snap) return;
-    const leaderboard = rooms.computeLeaderboard(room);
 
     const now = Date.now();
+    const includeLeaderboard = !lastLeaderboardSentAt || now - lastLeaderboardSentAt >= LEADERBOARD_SEND_EVERY_MS;
+    const leaderboard = includeLeaderboard ? rooms.computeLeaderboard(room) : undefined;
+    if (includeLeaderboard) lastLeaderboardSentAt = now;
+
     const includePellets = !lastPelletsSentAt || now - lastPelletsSentAt >= PELLETS_SEND_EVERY_MS;
     if (includePellets) lastPelletsSentAt = now;
 
     const payload = { type: 'state', roomId: room.id, ...snap, leaderboard };
     if (!includePellets) delete payload.pellets;
+    if (!includeLeaderboard) delete payload.leaderboard;
     ws.send(JSON.stringify(payload));
   }, Math.floor(1000 / 10));
 
@@ -341,6 +349,12 @@ wss.on('connection', (ws, req) => {
 setInterval(() => {
   // Bandwidth control: pellets are heavy. Broadcast them at a lower rate than player state.
   const PELLETS_SEND_EVERY_MS = 500;
+
+  // Bandwidth control: leaderboard is also heavy. Broadcast it at a lower rate than player state.
+  const LEADERBOARD_SEND_EVERY_MS = 1000;
+
+  // Bandwidth control: player meta (name/color/isBot) changes rarely; broadcast it periodically and on change.
+  const PLAYERS_META_SEND_EVERY_MS = 2000;
 
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
@@ -384,17 +398,63 @@ setInterval(() => {
 
     const snap = rooms.getRoomSnapshot(room.id);
     if (!snap) continue;
-    const leaderboard = rooms.computeLeaderboard(room);
 
     const now = Date.now();
+
+    // Emit players meta (rarely changes)
+    const metaCache = room._playersMetaCache || (room._playersMetaCache = new Map());
+    const currentIds = new Set();
+    const allMeta = [];
+    const metaChanged = [];
+    for (const p of Array.isArray(snap.players) ? snap.players : []) {
+      if (!p?.id) continue;
+      currentIds.add(p.id);
+      const meta = { id: p.id, name: p.name || '', color: p.color || '', isBot: Boolean(p.isBot) };
+      allMeta.push(meta);
+      const prev = metaCache.get(p.id);
+      if (!prev || prev.name !== meta.name || prev.color !== meta.color || prev.isBot !== meta.isBot) {
+        metaCache.set(p.id, meta);
+        metaChanged.push(meta);
+      }
+    }
+    // Prune cache entries for players that left.
+    for (const id of metaCache.keys()) {
+      if (!currentIds.has(id)) metaCache.delete(id);
+    }
+    const lastMetaSentAt = room._playersMetaSentAt || 0;
+    const metaDue = !lastMetaSentAt || now - lastMetaSentAt >= PLAYERS_META_SEND_EVERY_MS;
+    if (metaDue) {
+      room._playersMetaSentAt = now;
+      io.to(room.id).emit('players:meta', { roomId: room.id, players: allMeta });
+    } else if (metaChanged.length) {
+      io.to(room.id).emit('players:meta', { roomId: room.id, players: metaChanged });
+    }
+
+    // Emit leaderboard (1Hz)
+    const lastLeaderboardSentAt = room._leaderboardSentAt || 0;
+    const leaderboardDue = !lastLeaderboardSentAt || now - lastLeaderboardSentAt >= LEADERBOARD_SEND_EVERY_MS;
+    const leaderboard = leaderboardDue ? rooms.computeLeaderboard(room) : null;
+    if (leaderboardDue) room._leaderboardSentAt = now;
+
     const lastPelletsSentAt = room._pelletsSentAt || 0;
     const includePellets = !lastPelletsSentAt || now - lastPelletsSentAt >= PELLETS_SEND_EVERY_MS;
     if (includePellets) room._pelletsSentAt = now;
 
-    const payload = { roomId: room.id, ...snap };
+    // Slim down players payload: omit meta fields (name/color/isBot) from `state`.
+    const slimPlayers = Array.isArray(snap.players)
+      ? snap.players.map((p) => ({
+          id: p.id,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          r: Math.round(p.r * 10) / 10,
+          score: p.score
+        }))
+      : [];
+
+    const payload = { roomId: room.id, ...snap, players: slimPlayers };
     if (!includePellets) delete payload.pellets;
     io.to(room.id).emit('state', payload);
-    io.to(room.id).emit('leaderboard', { roomId: room.id, top: leaderboard });
+    if (leaderboardDue) io.to(room.id).emit('leaderboard', { roomId: room.id, top: leaderboard });
   }
 }, Math.floor(1000 / 10));
 
