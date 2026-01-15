@@ -2416,12 +2416,52 @@ setInterval(() => {
   }
 }, 2000);
 
-setInterval(() => {
-  if (!socket.connected) return;
+// Input uplink: only send when changed (reduces upstream bandwidth).
+const INPUT_SEND_HZ = 20;
+const INPUT_FORCE_EVERY_MS = 600;
+const INPUT_AXIS_QUANT = 127; // quantize [-1..1] to int steps to avoid jitter spam
+let lastSentInput = null;
+let lastSentInputAt = 0;
+
+function quantizeAxisValue(v) {
+  const n = Number.isFinite(v) ? clamp(v, -1, 1) : 0;
+  // Convert to small integer then back to a stable float.
+  const qi = Math.round(n * INPUT_AXIS_QUANT);
+  return qi / INPUT_AXIS_QUANT;
+}
+
+function normalizeInputPayload(raw) {
+  const ax = quantizeAxisValue(raw?.ax);
+  const ay = quantizeAxisValue(raw?.ay);
+  const boost = Boolean(raw?.boost);
+  return { ax, ay, boost };
+}
+
+function inputsEqual(a, b) {
+  if (!a || !b) return false;
+  return a.ax === b.ax && a.ay === b.ay && a.boost === b.boost;
+}
+
+function sendInputIfNeeded({ force = false } = {}) {
+  if (!socket?.connected) return;
   if (currentMode !== "play") return;
   if (!currentRoomId) return;
-  socket.emit("input", getAxis());
-}, 1000 / 30);
+
+  const now = Date.now();
+  const next = normalizeInputPayload(getAxis());
+  const unchanged = inputsEqual(next, lastSentInput);
+  const due = now - lastSentInputAt >= INPUT_FORCE_EVERY_MS;
+
+  if (force || !unchanged || due) {
+    socket.emit("input", next);
+    lastSentInput = next;
+    lastSentInputAt = now;
+  }
+}
+
+setInterval(() => {
+  sendInputIfNeeded();
+}, Math.floor(1000 / INPUT_SEND_HZ));
 
 btnLeave.addEventListener("click", () => {
   socket.emit("room:leave");
