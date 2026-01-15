@@ -6,6 +6,15 @@
   "main": "index.js",
   "scripts": {
     "dev": "node index.js",
+    "dev:local": "bash ./scripts/dev_local.sh start",
+    "dev:local:stop": "bash ./scripts/dev_local.sh stop",
+    "dev:local:status": "bash ./scripts/dev_local.sh status",
+    "dev:local:logs": "bash ./scripts/dev_local.sh logs",
+    "dev:lan": "bash ./scripts/dev_lan.sh start",
+    "dev:lan:stop": "bash ./scripts/dev_lan.sh stop",
+    "dev:lan:status": "bash ./scripts/dev_lan.sh status",
+    "dev:lan:logs": "bash ./scripts/dev_lan.sh logs",
+    "smoke": "bash ./scripts/smoke_check.sh",
     "start": "NODE_ENV=production node index.js",
     "test:bots": "node scripts/test_bots.mjs"
   },

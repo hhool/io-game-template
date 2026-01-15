@@ -18,6 +18,32 @@
 
 Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket，适配 Socket.IO）。
 
+重要提示：
+- 必须选择 **Web Service**（不要用 Static Site）。Socket.IO 需要 Node 服务端进程。
+- 如果将来要横向扩容到多实例，建议启用 Redis adapter（配置 `REDIS_URL`），并预期需要粘性会话/一致路由，否则连接可能在实例间漂移。
+- Render 免费档可能会休眠；这会导致 WebSocket 游戏断线、冷启动，线上稳定体验建议使用不会休眠的规格。
+
+### Render 点点点部署清单（推荐）
+
+在 Render Dashboard：
+
+1）创建服务
+
+- New → **Web Service**
+- 连接你的 Git 仓库
+- Branch：`dev`
+- Auto Deploy：建议开启
+
+2）健康检查
+
+- Health Check Path：`/healthz`
+
+3）部署后验证
+
+- 访问：`https://<你的render域名>/healthz`，应返回 `{ ok: true, ... }`
+- 浏览器打开：`https://<你的render域名>/`，确认能进入房间并正常连接
+- 确认 Socket.IO +（可选）`/ws` WebSocket 通道可用
+
 下面给两种方案：
 
 ### 方案 1：Render Web Service（非 Docker / 原生 Node）
@@ -40,6 +66,10 @@ Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket�
 
 建议（可选）：
 - Health Check Path：`/healthz`
+
+说明：
+- `HOST=0.0.0.0` 很关键，保证监听到 Render 的网络接口。
+- 默认假设仓库根目录就是服务根目录；如果你的仓库是 monorepo，请在 Render 的 Root Directory 里指定正确目录（或调整 `cd server` 命令）。
 
 4）验证
 
@@ -76,6 +106,32 @@ Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket�
 
 - `https://<你的render域名>/healthz`
 - `https://<你的render域名>/`
+
+## 冒烟测试清单（本地 / LAN / Render）
+
+### 本地（Mac）
+
+- 启动：`cd server && ./scripts/dev_local.sh start`
+- 健康检查：`curl -fsS http://127.0.0.1:6868/healthz`
+- 浏览器：`http://127.0.0.1:6868/`
+
+### LAN（手机）
+
+- 启动：`cd server && ./scripts/dev_lan.sh start`
+- 用手机打开脚本输出的 LAN 地址
+- 打不开时：先检查 macOS 防火墙是否拦截
+
+### Render
+
+- 健康检查：`https://<你的render域名>/healthz`
+- 首页：`https://<你的render域名>/`
+- 玩家无法连接时：先看 Render Logs，重点关注 WebSocket/Socket.IO 相关报错
+
+### 可选脚本
+
+- `cd server && ./scripts/smoke_check.sh http://127.0.0.1:6868`
+- `cd server && ./scripts/smoke_check.sh https://<你的render域名>`
+- 或者：`cd server && npm run smoke`（默认检查 `http://127.0.0.1:6868`）
 
 
 ## 前置条件

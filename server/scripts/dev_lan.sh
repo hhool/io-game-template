@@ -9,8 +9,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-6868}"
-PID_FILE="${PID_FILE:-/tmp/1wlgame6868.pid}"
-LOG_FILE="${LOG_FILE:-/tmp/1wlgame6868.log}"
+MODE="${MODE:-dev}" # dev|start
+PID_FILE="${PID_FILE:-/tmp/1wlgame${PORT}.lan.pid}"
+LOG_FILE="${LOG_FILE:-/tmp/1wlgame${PORT}.lan.log}"
+FORCE_PORT_KILL="${FORCE_PORT_KILL:-0}"
 
 usage() {
   cat <<EOF
@@ -19,8 +21,10 @@ Usage: $(basename "$0") <start|stop|restart|status|logs|url>
 Env overrides:
   HOST=0.0.0.0   Bind host (default 0.0.0.0)
   PORT=6868      Bind port (default 6868)
-  PID_FILE=...   PID file path (default /tmp/1wlgame6868.pid)
-  LOG_FILE=...   Log file path (default /tmp/1wlgame6868.log)
+  MODE=dev|start npm script to run (default dev)
+  PID_FILE=...   PID file path (default /tmp/1wlgame<PORT>.lan.pid)
+  LOG_FILE=...   Log file path (default /tmp/1wlgame<PORT>.lan.log)
+  FORCE_PORT_KILL=1  If the port is already in use, kill the listener and proceed
 
 Examples:
   ./scripts/dev_lan.sh start
@@ -71,14 +75,28 @@ do_start() {
 
   mkdir -p "$ROOT_DIR/scripts" >/dev/null 2>&1 || true
 
-  # Best-effort: clear port if occupied
-  lsof -ti ":$PORT" 2>/dev/null | xargs -r kill 2>/dev/null || true
-  sleep 0.2
+  # If the port is already in use, do not kill by default (avoid accidental kills).
+  local lp
+  lp="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${lp:-}" ]]; then
+    if [[ "$FORCE_PORT_KILL" == "1" ]]; then
+      echo "Port ${PORT} is busy (pid=${lp}); FORCE_PORT_KILL=1 so stopping it..."
+      kill -TERM "$lp" 2>/dev/null || true
+      sleep 0.2
+      kill -0 "$lp" 2>/dev/null && kill -KILL "$lp" 2>/dev/null || true
+      sleep 0.2
+    else
+      echo "Port ${PORT} is already in use (pid=${lp})."
+      echo "Refusing to kill it by default."
+      echo "Use: FORCE_PORT_KILL=1 $(basename "$0") start"
+      exit 3
+    fi
+  fi
 
   echo "Starting 1wlgame on ${HOST}:${PORT}..."
   (
     cd "$ROOT_DIR"
-    nohup env HOST="$HOST" PORT="$PORT" node "$ROOT_DIR/index.js" >"$LOG_FILE" 2>&1 &
+    nohup env HOST="$HOST" PORT="$PORT" npm run "$MODE" >"$LOG_FILE" 2>&1 &
     echo $! >"$PID_FILE"
   )
 

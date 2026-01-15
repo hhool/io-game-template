@@ -40,6 +40,9 @@ npm run dev
 
 日常本地开发建议使用 `server/scripts/dev_local.sh` 来管理 `6868` 端口的后台进程（start/stop/status/logs）。
 
+也可以使用 npm 快捷命令：
+- `npm run dev:local` / `npm run dev:local:stop`
+
 ```bash
 cd server
 ./scripts/dev_local.sh start
@@ -88,7 +91,9 @@ curl -fsS http://<LAN_IP>:6868/healthz
 
 注意：
 - 手机打不开时，检查 macOS 防火墙是否拦截，以及两台设备是否在同一网段。
-- 脚本会把 pid/log 写到 `/tmp/1wlgame6868.pid` 和 `/tmp/1wlgame6868.log`。
+- 脚本会把 pid/log 写到 `/tmp/1wlgame<PORT>.lan.pid` 和 `/tmp/1wlgame<PORT>.lan.log`。
+- 如果 `6868` 端口已被占用，`./scripts/dev_lan.sh start` 默认不会去杀进程。
+	只有你明确确认要强制清理端口时才用：`FORCE_PORT_KILL=1 ./scripts/dev_lan.sh start`
 
 ## 运行（带 Redis adapter）
 ```bash

@@ -158,6 +158,8 @@ do_start() {
   # Best-effort health check
   if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
     echo "Started (pid=$(cat "$PID_FILE"))"
+    echo "PID file: $PID_FILE"
+    echo "Log file: $LOG_FILE"
     do_url
     return 0
   fi

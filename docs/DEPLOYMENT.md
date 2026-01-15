@@ -9,6 +9,32 @@
 
 Render supports WebSocket and works well with Socket.IO.
 
+Important:
+- Use a **Web Service** (not a Static Site). Socket.IO needs a running Node server.
+- If you run more than 1 instance, enable the Redis adapter (`REDIS_URL`) and expect to need sticky sessions / consistent routing.
+- Render free tiers may sleep; this breaks real-time WebSocket gameplay (disconnects, cold starts). For stable gameplay, use a plan that does not sleep.
+
+### Render click-by-click checklist
+
+In Render Dashboard:
+
+1) Create service
+
+- New → **Web Service**
+- Connect your Git repo
+- Branch: `dev`
+- Auto Deploy: On (recommended)
+
+2) Health check
+
+- Health Check Path: `/healthz`
+
+3) Verify after deploy
+
+- `https://<your-service>/healthz` returns JSON like `{ ok: true, ... }`
+- Open `https://<your-service>/` and join a room
+- Confirm WebSocket transport works (Socket.IO + optional `/ws`)
+
 ### Option A: Render Web Service (Native Node, no Docker)
 
 1) Create service
@@ -26,6 +52,10 @@ Render supports WebSocket and works well with Socket.IO.
 - `HOST=0.0.0.0`
 - `PORT` is injected by Render (the server should read `process.env.PORT`)
 - `REDIS_URL` (optional)
+
+Notes:
+- Keep `HOST=0.0.0.0` so the server listens on Render's network interface.
+- The repo root is assumed to be the service root. If you are deploying from a monorepo, set Render “Root Directory” accordingly (or adjust the `cd server` commands).
 
 4) Health check
 
@@ -46,6 +76,36 @@ Render supports WebSocket and works well with Socket.IO.
 
 - Set Render “Port” to `6868` (or keep it consistent with `PORT` if you override)
 - Set `HOST=0.0.0.0`
+
+Notes:
+- For Docker services, Render needs to know which port the container listens on.
+- Keep `PORT` consistent between Render settings and your container runtime.
+
+## Smoke test checklist (local / LAN / Render)
+
+### Local (Mac)
+
+- Start: `cd server && ./scripts/dev_local.sh start`
+- Check: `curl -fsS http://127.0.0.1:6868/healthz`
+- Browser: `http://127.0.0.1:6868/`
+
+### LAN (phone)
+
+- Start: `cd server && ./scripts/dev_lan.sh start`
+- Open the printed LAN URL from your phone
+- If it fails, check macOS firewall prompts
+
+### Render
+
+- Check health: `https://<your-service>/healthz`
+- Open: `https://<your-service>/`
+- If players cannot connect, check Render logs for WebSocket/Socke.IO errors
+
+### Optional script
+
+- `cd server && ./scripts/smoke_check.sh http://127.0.0.1:6868`
+- `cd server && ./scripts/smoke_check.sh https://<your-service>`
+- Or: `cd server && npm run smoke` (defaults to `http://127.0.0.1:6868`)
 
 4) Health check
 

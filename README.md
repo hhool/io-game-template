@@ -40,6 +40,9 @@ Port notes:
 
 For day-to-day local dev, use `server/scripts/dev_local.sh` to manage a background process on port `6868`.
 
+You can also use npm shortcuts:
+- `npm run dev:local` / `npm run dev:local:stop`
+
 ```bash
 cd server
 ./scripts/dev_local.sh start
@@ -88,7 +91,9 @@ Stop it:
 
 Notes:
 - If the phone cannot open the page, check macOS firewall prompts and ensure both devices are on the same network.
-- The LAN helper writes pid/log to `/tmp/1wlgame6868.pid` and `/tmp/1wlgame6868.log`.
+- The LAN helper writes pid/log to `/tmp/1wlgame<PORT>.lan.pid` and `/tmp/1wlgame<PORT>.lan.log`.
+- If port `6868` is already in use, `./scripts/dev_lan.sh start` will refuse to kill it by default.
+  Use `FORCE_PORT_KILL=1 ./scripts/dev_lan.sh start` only if you are sure.
 
 ## Run (with Redis adapter)
 ```bash
