@@ -2377,6 +2377,13 @@ socket.on("state", (snap) => {
     currentRulesId = snap.rulesId;
     renderRoomLabel();
   }
+
+  // Bandwidth optimization: server may omit `pellets` on some ticks.
+  // Preserve the last known pellet list so rendering stays stable.
+  if (snap && !Object.prototype.hasOwnProperty.call(snap, "pellets") && lastSnapshot?.pellets) {
+    snap = { ...snap, pellets: lastSnapshot.pellets };
+  }
+
   prevSnapshot = lastSnapshot;
   lastSnapshot = snap;
   renderDebugPanel(false);

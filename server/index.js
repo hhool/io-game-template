@@ -315,12 +315,23 @@ wss.on('connection', (ws, req) => {
 
   ws.send(JSON.stringify({ type: 'hello', room: rooms.getRoomInfo(room.id), serverTs: Date.now() }));
 
+  // Bandwidth control: pellets are heavy. Stream them at a lower rate than player state.
+  const PELLETS_SEND_EVERY_MS = 500;
+  let lastPelletsSentAt = 0;
+
   const interval = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     const snap = rooms.getRoomSnapshot(room.id);
     if (!snap) return;
     const leaderboard = rooms.computeLeaderboard(room);
-    ws.send(JSON.stringify({ type: 'state', roomId: room.id, ...snap, leaderboard }));
+
+    const now = Date.now();
+    const includePellets = !lastPelletsSentAt || now - lastPelletsSentAt >= PELLETS_SEND_EVERY_MS;
+    if (includePellets) lastPelletsSentAt = now;
+
+    const payload = { type: 'state', roomId: room.id, ...snap, leaderboard };
+    if (!includePellets) delete payload.pellets;
+    ws.send(JSON.stringify(payload));
   }, Math.floor(1000 / 10));
 
   ws.on('close', () => clearInterval(interval));
@@ -328,6 +339,9 @@ wss.on('connection', (ws, req) => {
 
 // Broadcast loop per room at broadcastHz (use a simple global timer)
 setInterval(() => {
+  // Bandwidth control: pellets are heavy. Broadcast them at a lower rate than player state.
+  const PELLETS_SEND_EVERY_MS = 500;
+
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
 
@@ -371,7 +385,15 @@ setInterval(() => {
     const snap = rooms.getRoomSnapshot(room.id);
     if (!snap) continue;
     const leaderboard = rooms.computeLeaderboard(room);
-    io.to(room.id).emit('state', { roomId: room.id, ...snap });
+
+    const now = Date.now();
+    const lastPelletsSentAt = room._pelletsSentAt || 0;
+    const includePellets = !lastPelletsSentAt || now - lastPelletsSentAt >= PELLETS_SEND_EVERY_MS;
+    if (includePellets) room._pelletsSentAt = now;
+
+    const payload = { roomId: room.id, ...snap };
+    if (!includePellets) delete payload.pellets;
+    io.to(room.id).emit('state', payload);
     io.to(room.id).emit('leaderboard', { roomId: room.id, top: leaderboard });
   }
 }, Math.floor(1000 / 15));
