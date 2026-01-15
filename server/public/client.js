@@ -35,6 +35,8 @@ const playersEl = document.getElementById("players");
 const btnPlayersToggle = document.getElementById("btnPlayersToggle");
 
 const btnHudToggle = document.getElementById("btnHudToggle");
+const minimapTitleEl = document.getElementById("minimapTitle");
+const btnMinimapToggle = document.getElementById("btnMinimapToggle");
 
 const btnLeave = document.getElementById("btnLeave");
 
@@ -450,6 +452,7 @@ const I18N = {
     connectError: "connect_error",
     hudShow: "Show HUD",
     hudHide: "Hide HUD",
+    minimap: "Minimap",
     joining: "Joining…",
     loginWait: "Waiting for server…",
     connecting: "connecting…",
@@ -497,6 +500,7 @@ const I18N = {
     connectError: "ошибка подключения",
     hudShow: "Показать HUD",
     hudHide: "Скрыть HUD",
+    minimap: "Миникарта",
     joining: "Входим…",
     loginWait: "Ожидание сервера…",
     connecting: "подключение…",
@@ -544,6 +548,7 @@ const I18N = {
     connectError: "erreur de connexion",
     hudShow: "Afficher HUD",
     hudHide: "Masquer HUD",
+    minimap: "Minicarte",
     joining: "Connexion…",
     loginWait: "En attente du serveur…",
     connecting: "connexion…",
@@ -591,6 +596,7 @@ const I18N = {
     connectError: "连接错误",
     hudShow: "显示 HUD",
     hudHide: "隐藏 HUD",
+    minimap: "小地图",
     joining: "正在进入…",
     loginWait: "等待服务器响应…",
     connecting: "连接中…",
@@ -638,6 +644,7 @@ const I18N = {
     connectError: "Verbindungsfehler",
     hudShow: "HUD anzeigen",
     hudHide: "HUD ausblenden",
+    minimap: "Minikarte",
     joining: "Beitreten…",
     loginWait: "Warte auf Server…",
     connecting: "verbinde…",
@@ -685,6 +692,7 @@ const I18N = {
     connectError: "خطأ اتصال",
     hudShow: "إظهار HUD",
     hudHide: "إخفاء HUD",
+    minimap: "خريطة مصغّرة",
     joining: "جارٍ الدخول…",
     loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
@@ -1291,6 +1299,13 @@ function applyLang() {
     btnHudToggle.textContent = hudPanelHidden ? t("hudShow") : t("hudHide");
   }
 
+  if (minimapTitleEl) minimapTitleEl.textContent = t("minimap");
+  if (btnMinimapToggle) {
+    const enabled = minimapCfg().enabled;
+    btnMinimapToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+    btnMinimapToggle.textContent = enabled ? t("hide") : t("show");
+  }
+
   if (statsTitleEl) statsTitleEl.textContent = t("stats");
   if (bestTitleEl) bestTitleEl.textContent = t("best");
   if (colDateEl) colDateEl.textContent = t("date");
@@ -1306,6 +1321,13 @@ function applyLang() {
   renderRoomLabel();
   renderStats();
   renderPlayersList(true);
+}
+
+if (btnMinimapToggle) {
+  btnMinimapToggle.addEventListener("click", () => {
+    const enabled = minimapCfg().enabled;
+    applyConfig({ minimap: { enabled: !enabled } }, { persist: true });
+  });
 }
 
 function setInfoCollapsed(collapsed) {
