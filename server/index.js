@@ -311,18 +311,72 @@ wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const roomId = url.searchParams.get('room');
 
+  // Optional compact format for WS: ?fmt=array
+  // - default: object payloads (backward compatible)
+  // - array: players as [pid,x,y,r10,score], pellets as [id,x,y,r10]
+  const fmt = String(url.searchParams.get('fmt') || '').trim().toLowerCase();
+  const useArrayFmt = fmt === 'array';
+
+  // Optional debug extras: ?debug=1
+  const debug = (() => {
+    const v = String(url.searchParams.get('debug') || '').trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+  })();
+
   const room = roomId ? rooms.ensureRoom(roomId) : rooms.ensureRoom();
 
-  ws.send(JSON.stringify({ type: 'hello', room: rooms.getRoomInfo(room.id), serverTs: Date.now() }));
+  // Protocol version for ws state frames.
+  const WS_PROTO = 1;
 
-  // Bandwidth control: pellets are heavy. Prefer delta updates.
+  ws.send(
+    JSON.stringify({
+      type: 'hello',
+      proto: WS_PROTO,
+      room: rooms.getRoomInfo(room.id),
+      serverTs: Date.now(),
+      formats: { default: 'object', supported: ['object', 'array'] },
+      fmt: useArrayFmt ? 'array' : 'object',
+      debug
+    })
+  );
+
+  // Bandwidth control: align WS stream to the same policy as Socket.IO.
   const PELLETS_FULL_SEND_EVERY_MS = 4000;
-  let lastPelletsFullSentAt = 0;
-  const pelletsCache = new Map();
-
-  // Bandwidth control: leaderboard is also heavy. Stream it at a lower rate.
+  const PLAYERS_FULL_SEND_EVERY_MS = 2000;
+  const PLAYERS_META_SEND_EVERY_MS = 2000;
   const LEADERBOARD_SEND_EVERY_MS = 1000;
+
+  // Per-connection monotonic sequence (lets client detect gaps/out-of-order).
+  let seq = 0;
+
+  // Per-connection caches for delta.
+  const playersStateCache = new Map(); // pid -> {pid,x,y,r10,score}
+  const playersMetaCache = new Map(); // playerId -> {pid,id,name,color,isBot}
+  const pelletsCache = new Map(); // pelId -> {id,x,y,r10}
+
+  let lastPlayersFullSentAt = 0;
+  let lastPlayersMetaSentAt = 0;
+  let lastPelletsFullSentAt = 0;
   let lastLeaderboardSentAt = 0;
+
+  let forceFullPlayers = false;
+  let forceFullPellets = false;
+  let forceMeta = false;
+
+  ws.on('message', (buf) => {
+    // Minimal control plane for resync.
+    // Client can send: {"type":"resync"}
+    try {
+      const msg = JSON.parse(String(buf || ''));
+      if (msg && msg.type === 'resync') {
+        forceFullPlayers = true;
+        forceFullPellets = true;
+        forceMeta = true;
+      }
+    } catch {
+      // ignore
+    }
+  });
 
   const interval = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
@@ -330,64 +384,188 @@ wss.on('connection', (ws, req) => {
     if (!snap) return;
 
     const now = Date.now();
+
+    // Keep the room's pid mapping stable across its lifetime.
+    const pidById = room._pidById || (room._pidById = new Map());
+    const idByPid = room._idByPid || (room._idByPid = new Map());
+    if (!Number.isFinite(room._pidSeq)) room._pidSeq = 1;
+
+    const payload = {
+      type: 'state',
+      proto: WS_PROTO,
+      roomId: room.id,
+      seq: ++seq,
+      ts: snap.ts
+    };
+
+    // Leaderboard (1Hz)
     const includeLeaderboard = !lastLeaderboardSentAt || now - lastLeaderboardSentAt >= LEADERBOARD_SEND_EVERY_MS;
-    const leaderboard = includeLeaderboard ? rooms.computeLeaderboard(room) : undefined;
-    if (includeLeaderboard) lastLeaderboardSentAt = now;
+    if (includeLeaderboard) {
+      payload.leaderboard = rooms.computeLeaderboard(room);
+      lastLeaderboardSentAt = now;
+    }
 
-    // Pellets delta
-    const sendFullPellets = !lastPelletsFullSentAt || now - lastPelletsFullSentAt >= PELLETS_FULL_SEND_EVERY_MS || pelletsCache.size === 0;
-    const payload = { type: 'state', roomId: room.id, ...snap, leaderboard };
+    // Players meta + pid mapping (low frequency + on change)
+    const snapPlayers = Array.isArray(snap.players) ? snap.players : [];
+    const currentIds = new Set();
+    const allMeta = [];
+    const metaChanged = [];
 
-    if (Array.isArray(snap.pellets)) {
-      if (sendFullPellets) {
-        lastPelletsFullSentAt = now;
-        pelletsCache.clear();
-        const full = [];
-        for (const pel of snap.pellets) {
-          if (!pel?.id) continue;
-          const q = {
-            id: pel.id,
-            x: Math.round(pel.x),
-            y: Math.round(pel.y),
-            r10: Math.round(Number(pel.r) * 10)
-          };
-          pelletsCache.set(q.id, q);
-          full.push(q);
-        }
-        payload.pellets = full;
-      } else {
-        const seen = new Set();
-        const changed = [];
-        for (const pel of snap.pellets) {
-          if (!pel?.id) continue;
-          const q = {
-            id: pel.id,
-            x: Math.round(pel.x),
-            y: Math.round(pel.y),
-            r10: Math.round(Number(pel.r) * 10)
-          };
-          seen.add(q.id);
-          const prev = pelletsCache.get(q.id);
-          if (!prev || prev.x !== q.x || prev.y !== q.y || prev.r10 !== q.r10) {
-            pelletsCache.set(q.id, q);
-            changed.push(q);
-          }
-        }
-        const gone = [];
-        for (const id of pelletsCache.keys()) {
-          if (!seen.has(id)) {
-            gone.push(id);
-            pelletsCache.delete(id);
-          }
-        }
-        if (changed.length) payload.pelletsD = changed;
-        if (gone.length) payload.pelletsGone = gone;
-        // Omit full pellets list.
-        delete payload.pellets;
+    for (const p of snapPlayers) {
+      if (!p?.id) continue;
+      currentIds.add(p.id);
+
+      let pid = pidById.get(p.id);
+      if (!pid) {
+        pid = room._pidSeq++;
+        pidById.set(p.id, pid);
+        idByPid.set(pid, p.id);
+      }
+
+      const meta = { pid, id: p.id, name: p.name || '', color: p.color || '', isBot: Boolean(p.isBot) };
+      allMeta.push(meta);
+
+      const prev = playersMetaCache.get(p.id);
+      if (!prev || prev.name !== meta.name || prev.color !== meta.color || prev.isBot !== meta.isBot) {
+        playersMetaCache.set(p.id, meta);
+        metaChanged.push(meta);
       }
     }
 
-    if (!includeLeaderboard) delete payload.leaderboard;
+    // Prune meta cache + pid mappings for players that left.
+    for (const id of playersMetaCache.keys()) {
+      if (!currentIds.has(id)) playersMetaCache.delete(id);
+    }
+    for (const [id, pid] of pidById) {
+      if (!currentIds.has(id)) {
+        pidById.delete(id);
+        idByPid.delete(pid);
+        playersStateCache.delete(pid);
+      }
+    }
+
+    const metaDue = forceMeta || !lastPlayersMetaSentAt || now - lastPlayersMetaSentAt >= PLAYERS_META_SEND_EVERY_MS;
+    if (metaDue) {
+      lastPlayersMetaSentAt = now;
+      payload.playersMeta = allMeta;
+      forceMeta = false;
+    } else if (metaChanged.length) {
+      payload.playersMeta = metaChanged;
+    }
+
+    // Players slim
+    const slimPlayers = [];
+    for (const p of snapPlayers) {
+      if (!p?.id) continue;
+      const pid = pidById.get(p.id);
+      if (!pid) continue;
+      slimPlayers.push({
+        pid,
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        r10: Math.round(Number(p.r) * 10),
+        score: Math.round(Number(p.score) || 0)
+      });
+    }
+
+    // Players delta
+    const seenPids = new Set();
+    const playersD = [];
+    for (const p of slimPlayers) {
+      seenPids.add(p.pid);
+      const prev = playersStateCache.get(p.pid);
+      if (!prev || prev.x !== p.x || prev.y !== p.y || prev.r10 !== p.r10 || prev.score !== p.score) {
+        playersStateCache.set(p.pid, p);
+        playersD.push(p);
+      }
+    }
+
+    const playersGone = [];
+    for (const pid of playersStateCache.keys()) {
+      if (!seenPids.has(pid)) {
+        playersGone.push(pid);
+        playersStateCache.delete(pid);
+      }
+    }
+
+    const sendFullPlayers = forceFullPlayers || !lastPlayersFullSentAt || now - lastPlayersFullSentAt >= PLAYERS_FULL_SEND_EVERY_MS;
+    if (sendFullPlayers) {
+      lastPlayersFullSentAt = now;
+      forceFullPlayers = false;
+      payload.fullPlayers = true;
+      payload.players = useArrayFmt ? slimPlayers.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : slimPlayers;
+    } else {
+      payload.fullPlayers = false;
+      if (playersD.length) payload.playersD = useArrayFmt ? playersD.map((pp) => [pp.pid, pp.x, pp.y, pp.r10, pp.score]) : playersD;
+      if (playersGone.length) payload.playersGone = playersGone;
+    }
+
+    // Pellets delta (4s full)
+    const snapPellets = Array.isArray(snap.pellets) ? snap.pellets : [];
+    const sendFullPellets = forceFullPellets || !lastPelletsFullSentAt || now - lastPelletsFullSentAt >= PELLETS_FULL_SEND_EVERY_MS || pelletsCache.size === 0;
+
+    if (sendFullPellets) {
+      lastPelletsFullSentAt = now;
+      forceFullPellets = false;
+      payload.fullPellets = true;
+
+      pelletsCache.clear();
+      const full = [];
+      for (const pel of snapPellets) {
+        if (!pel?.id) continue;
+        const q = {
+          id: pel.id,
+          x: Math.round(pel.x),
+          y: Math.round(pel.y),
+          r10: Math.round(Number(pel.r) * 10)
+        };
+        pelletsCache.set(q.id, q);
+        full.push(q);
+      }
+      payload.pellets = useArrayFmt ? full.map((p) => [p.id, p.x, p.y, p.r10]) : full;
+    } else {
+      payload.fullPellets = false;
+      const seen = new Set();
+      const changed = [];
+
+      for (const pel of snapPellets) {
+        if (!pel?.id) continue;
+        const q = {
+          id: pel.id,
+          x: Math.round(pel.x),
+          y: Math.round(pel.y),
+          r10: Math.round(Number(pel.r) * 10)
+        };
+        seen.add(q.id);
+        const prev = pelletsCache.get(q.id);
+        if (!prev || prev.x !== q.x || prev.y !== q.y || prev.r10 !== q.r10) {
+          pelletsCache.set(q.id, q);
+          changed.push(q);
+        }
+      }
+
+      const gone = [];
+      for (const id of pelletsCache.keys()) {
+        if (!seen.has(id)) {
+          gone.push(id);
+          pelletsCache.delete(id);
+        }
+      }
+
+      if (changed.length) payload.pelletsD = useArrayFmt ? changed.map((p) => [p.id, p.x, p.y, p.r10]) : changed;
+      if (gone.length) payload.pelletsGone = gone;
+    }
+
+    if (debug) {
+      payload.debug = {
+        players: snapPlayers.length,
+        pellets: snapPellets.length,
+        cachePlayers: playersStateCache.size,
+        cachePellets: pelletsCache.size,
+        fmt: useArrayFmt ? 'array' : 'object'
+      };
+    }
+
     ws.send(JSON.stringify(payload));
   }, Math.floor(1000 / 10));
 
@@ -411,6 +589,9 @@ setInterval(() => {
 
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
+
+    // Monotonic sequence id for Socket.IO state packets (helps clients detect missing deltas).
+    room._stateSeq = Number.isFinite(room._stateSeq) ? room._stateSeq + 1 : 1;
 
     // Per-room numeric player id mapping (stable while the room lives).
     // Allows `state` to send compact integer ids.
@@ -558,7 +739,7 @@ setInterval(() => {
     const sendFullPlayers = !lastPlayersFullSentAt || now - lastPlayersFullSentAt >= PLAYERS_FULL_SEND_EVERY_MS;
     if (sendFullPlayers) room._playersFullSentAt = now;
 
-    const payload = { roomId: room.id, ...snap };
+    const payload = { roomId: room.id, seq: room._stateSeq, ...snap };
     if (sendFullPlayers) {
       payload.players = slimPlayers;
     } else {
