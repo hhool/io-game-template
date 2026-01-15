@@ -157,6 +157,21 @@ Supported bot URL params:
 - `bots=1|true|yes|on` (enable), `bots=0|false|no|off` (disable)
 - `botCount=<0-30>` (also accepts `botsCount` / `bots_count`)
 
+## Respawn loop
+By default, the client auto-respawns after death (eaten / out-of-bounds).
+
+Implementation note (P0 version): the server emits `game:over` and removes you from the room; the client waits briefly and then re-joins via `mm:join` using the same `rulesId`.
+
+Configure it in `server/public/config.json` under `gameplay.respawn`:
+- `gameplay.respawn.enabled`: `true | false` (default: `true`)
+- `gameplay.respawn.delayMs`: number (default: `650`, range: 0..5000)
+
+Runtime override example:
+```js
+// Disable auto-respawn
+window.gameControls.configure({ gameplay: { respawn: { enabled: false } } })
+```
+
 ## Rules selection (`rulesId`)
 The server can run different game rulesets per-room.
 
@@ -188,7 +203,7 @@ Maintain this list by checking items off as you ship.
 
 ### P0 (Playable loop)
 - [x] Eat / mass growth rules (pellets + players)
-- [ ] Death + respawn loop
+- [x] Death + respawn loop
 - [ ] Camera zoom that scales with player size (and minimap sync)
 - [ ] Basic in-game HUD (players, ping, FPS) + settings panel for minimap/bots/movement
 

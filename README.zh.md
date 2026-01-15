@@ -157,6 +157,21 @@ URL 传参快速测试（不持久化）：
 - `bots=1|true|yes|on`（开启），`bots=0|false|no|off`（关闭）
 - `botCount=<0-30>`（也兼容 `botsCount` / `bots_count`）
 
+## 重生闭环（respawn）
+默认情况下，玩家死亡后（被吞噬 / 越界）客户端会自动重生。
+
+实现说明（P0 版本）：服务端触发 `game:over` 并把你从房间移除；客户端短暂等待后，会使用相同的 `rulesId` 通过 `mm:join` 自动重新加入，开始新一局。
+
+在 `server/public/config.json` 的 `gameplay.respawn` 中配置：
+- `gameplay.respawn.enabled`: `true | false`（默认：`true`）
+- `gameplay.respawn.delayMs`: 数字（默认：`650`，范围：0..5000）
+
+运行时覆盖示例：
+```js
+// 关闭自动重生
+window.gameControls.configure({ gameplay: { respawn: { enabled: false } } })
+```
+
 ## 规则选择（`rulesId`）
 服务端支持在不同房间运行不同规则集（ruleset）。
 
@@ -197,7 +212,7 @@ URL 传参快速测试（不持久化）：
 
 ### P0（可玩性闭环）
 - [x] 吞噬/成长规则（豆子 + 玩家）
-- [ ] 死亡与重生闭环
+- [x] 死亡与重生闭环
 - [ ] 视野缩放（随体型变化）+ 小地图同步
 - [ ] 基础 HUD（人数/延迟/FPS）+ 设置面板（小地图/Bots/手感）
 
