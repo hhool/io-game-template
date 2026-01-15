@@ -26,27 +26,84 @@ const socket = io(url, {
 });
 
 let roomId = null;
+let playerId = null;
 let firstBotPos = null;
 let moved = false;
 let phase = 'joining';
 let movementPhaseStartTs = 0;
 
-function countBots(statePayload) {
-  const players = statePayload?.players;
-  if (!Array.isArray(players)) return { total: 0, botIds: [] };
-  const botIds = players.filter((p) => p?.isBot).map((p) => p.id);
-  return { total: botIds.length, botIds };
+let exiting = false;
+
+// Socket.IO `state` payload is delta-compressed and strips meta fields (name/color/isBot).
+// We must join `players:meta` (pid -> {id,isBot}) with `state` (pid -> position).
+const metaByPid = new Map(); // pid -> { id, isBot }
+const stateByPid = new Map(); // pid -> { x, y }
+
+function applyPlayersMeta(metaPayload) {
+  const list = metaPayload?.players;
+  if (!Array.isArray(list)) return;
+  for (const m of list) {
+    const pid = Number(m?.pid);
+    if (!Number.isFinite(pid)) continue;
+    const id = typeof m?.id === 'string' ? m.id : null;
+    if (!id) continue;
+    metaByPid.set(pid, { id, isBot: Boolean(m?.isBot) });
+  }
 }
 
-function findBotPos(statePayload) {
-  const players = statePayload?.players;
-  if (!Array.isArray(players)) return null;
-  const bot = players.find((p) => p?.isBot);
-  if (!bot) return null;
-  const x = Number(bot.x);
-  const y = Number(bot.y);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { id: bot.id, x, y };
+function applyStatePayload(statePayload) {
+  if (!statePayload || typeof statePayload !== 'object') return;
+
+  if (Array.isArray(statePayload.players)) {
+    stateByPid.clear();
+    for (const p of statePayload.players) {
+      const pid = Number(p?.pid);
+      if (!Number.isFinite(pid)) continue;
+      const x = Number(p?.x);
+      const y = Number(p?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      stateByPid.set(pid, { x, y });
+    }
+    return;
+  }
+
+  if (Array.isArray(statePayload.playersD)) {
+    for (const p of statePayload.playersD) {
+      const pid = Number(p?.pid);
+      if (!Number.isFinite(pid)) continue;
+      const x = Number(p?.x);
+      const y = Number(p?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      stateByPid.set(pid, { x, y });
+    }
+  }
+
+  if (Array.isArray(statePayload.playersGone)) {
+    for (const pidRaw of statePayload.playersGone) {
+      const pid = Number(pidRaw);
+      if (!Number.isFinite(pid)) continue;
+      stateByPid.delete(pid);
+    }
+  }
+}
+
+function countBotsInWorld() {
+  let total = 0;
+  const botPids = [];
+  for (const pid of stateByPid.keys()) {
+    const meta = metaByPid.get(pid);
+    if (meta?.isBot) {
+      total += 1;
+      botPids.push(pid);
+    }
+  }
+  return { total, botPids };
+}
+
+function findBotPosByPid(pid) {
+  const pos = stateByPid.get(pid);
+  if (!pos) return null;
+  return { pid, x: pos.x, y: pos.y };
 }
 
 function dist(a, b) {
@@ -56,10 +113,15 @@ function dist(a, b) {
 }
 
 const timer = setTimeout(() => {
+  exiting = true;
   console.error(`[FAIL] Timeout after ${timeoutMs}ms (phase=${phase}, roomId=${roomId})`);
   socket.close();
   process.exit(1);
 }, timeoutMs);
+
+socket.on('auth', (payload) => {
+  playerId = payload?.playerId || playerId;
+});
 
 socket.on('connect', () => {
   // Set a nick, then quick-match into play
@@ -91,25 +153,33 @@ socket.on('bots:ok', (payload) => {
   // Wait for state updates.
 });
 
+socket.on('players:meta', (payload) => {
+  if (payload?.roomId !== roomId) return;
+  applyPlayersMeta(payload);
+});
+
 socket.on('state', (payload) => {
   if (payload?.roomId !== roomId) return;
   const now = Date.now();
 
-  const { total } = countBots(payload);
+  applyStatePayload(payload);
+
+  const { total, botPids } = countBotsInWorld();
 
   if (phase === 'enabling') {
     if (total >= botCount) {
       phase = 'movement-check';
       movementPhaseStartTs = now;
-      firstBotPos = findBotPos(payload);
+      const firstPid = botPids[0];
+      firstBotPos = Number.isFinite(firstPid) ? findBotPosByPid(firstPid) : null;
       // If there are no pellets / no movement yet, give it a few ticks.
       return;
     }
   }
 
   if (phase === 'movement-check') {
-    const p = findBotPos(payload);
-    if (firstBotPos && p && p.id === firstBotPos.id) {
+    const p = firstBotPos ? findBotPosByPid(firstBotPos.pid) : null;
+    if (firstBotPos && p && p.pid === firstBotPos.pid) {
       if (dist(firstBotPos, p) > 0.5) {
         moved = true;
       }
@@ -125,6 +195,7 @@ socket.on('state', (payload) => {
   if (phase === 'disabling') {
     if (total === 0) {
       clearTimeout(timer);
+      exiting = true;
       console.log(`[OK] bots spawned (${botCount}), movement=${moved}, then removed (roomId=${roomId})`);
       socket.close();
       process.exit(0);
@@ -133,6 +204,7 @@ socket.on('state', (payload) => {
 });
 
 socket.on('disconnect', (reason) => {
+  if (exiting) return;
   if (phase === 'disabling') return;
   console.error('[FAIL] disconnected early:', reason);
   clearTimeout(timer);

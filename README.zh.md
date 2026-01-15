@@ -218,6 +218,13 @@ window.gameControls.configure({ gameplay: { respawn: { enabled: false } } })
 说明：
 - 体积增长不会设计成无限大；达到一定阈值后，用其它方式表达“体积/吞噬能力”（例如档位/标签/特效等），不做视野缩放。
 
+当前实现：
+- 体积（半径）有上限：`rules.<agar-*>.agar.maxRadius`
+- 达到上限后，继续通过“档位（tier）”表达吞噬能力（由 score 推导，不需要改协议格式）：
+	- `powerScoreStart`, `powerScoreStep`, `powerMaxTier`
+	- PVP 加成：`pvpTierEatRatioBonus`, `pvpTierBonusR`, `pvpEatRatioMin`
+	- 前端在接近上限且 tier>0 时，会渲染一个轻微光环（halo）作为视觉提示。
+
 ### P1（Agar 向扩展）
 - [ ] 分裂 + 合并冷却
 - [ ] 喷射质量
@@ -226,7 +233,7 @@ window.gameControls.configure({ gameplay: { respawn: { enabled: false } } })
 
 ### P1/P2（体验与交互）
 - [ ] 设置面板（Bots/手感/输入）
-- [ ] 阈值后体积/吞噬能力表达（不做视野缩放）
+- [x] 阈值后体积/吞噬能力表达（不做视野缩放）
 
 ### P1（PaperIO 向扩展）
 - [ ] 领地填充 + 计分

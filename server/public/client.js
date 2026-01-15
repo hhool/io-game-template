@@ -864,6 +864,28 @@ let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
 
+function agarPowerCfgForRender(rulesId) {
+  const rid = normalizeRulesId(rulesId) || "agar-lite";
+  const rc = rulesCfgFor(rid);
+  const agar = rc?.agar && typeof rc.agar === "object" ? rc.agar : {};
+
+  const maxRadius = Number.isFinite(agar?.maxRadius) ? Math.max(18, Math.min(260, Number(agar.maxRadius))) : 92;
+  const powerScoreStart = Number.isFinite(agar?.powerScoreStart) ? Math.max(0, Math.floor(agar.powerScoreStart)) : 140;
+  const powerScoreStep = Number.isFinite(agar?.powerScoreStep) ? Math.max(1, Math.floor(agar.powerScoreStep)) : 80;
+  const powerMaxTier = Number.isFinite(agar?.powerMaxTier) ? Math.max(0, Math.min(50, Math.floor(agar.powerMaxTier))) : 10;
+  const pvpTierBonusR = Number.isFinite(agar?.pvpTierBonusR) ? Math.max(0, Math.min(40, Number(agar.pvpTierBonusR))) : 3.0;
+
+  return { maxRadius, powerScoreStart, powerScoreStep, powerMaxTier, pvpTierBonusR };
+}
+
+function agarPowerTierFromScore(score, cfg) {
+  const s = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
+  if (!cfg || cfg.powerMaxTier <= 0) return 0;
+  if (s < cfg.powerScoreStart) return 0;
+  const tier = 1 + Math.floor((s - cfg.powerScoreStart) / cfg.powerScoreStep);
+  return Math.max(0, Math.min(cfg.powerMaxTier, tier));
+}
+
 // --- Input model (keyboard + touch) ---
 const STORAGE_TOUCH_GUIDE = "1wlgame_touch_guide_seen_v1";
 const STORAGE_CFG = "1wlgame_cfg_v1";
@@ -3360,11 +3382,30 @@ function frame(now) {
   }
 
   // players
+  const renderRulesId = s1?.rulesId || currentRulesId || "agar-lite";
+  const powerCfg = agarPowerCfgForRender(renderRulesId);
   for (const p1 of s1.players || []) {
     const p0 = players0.get(p1.id);
     const x = p0 ? lerp(p0.x, p1.x, interp) : p1.x;
     const y = p0 ? lerp(p0.y, p1.y, interp) : p1.y;
     const r = p0 ? lerp(p0.r, p1.r, interp) : p1.r;
+
+    // Power tier halo: after reaching size cap, "eat power" continues to grow.
+    // We derive tier from score so we don't need to change the snapshot protocol.
+    const tier = agarPowerTierFromScore(p1?.score, powerCfg);
+    const nearCap = Number.isFinite(r) && Number.isFinite(powerCfg?.maxRadius) && r >= powerCfg.maxRadius - 0.75;
+    if (tier > 0 && nearCap) {
+      const extraR = tier * (powerCfg?.pvpTierBonusR ?? 3.0);
+      const haloR = r + 6 + Math.min(28, extraR);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0.10, Math.min(0.34, 0.10 + tier * 0.02))})`;
+      ctx.lineWidth = Math.max(2, Math.min(6, 2 + tier * 0.25));
+      ctx.beginPath();
+      ctx.arc(x, y, haloR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.beginPath();
     ctx.fillStyle = p1.color;

@@ -39,7 +39,16 @@
         "speedMinMul": 0.35,
         "speedCurvePow": 1.0,
         "boostEnabled": true,
-        "boostMul": 1.15
+        "boostMul": 1.15,
+
+        "maxRadius": 92,
+        "powerScoreStart": 140,
+        "powerScoreStep": 80,
+        "powerMaxTier": 10,
+
+        "pvpEatRatioMin": 1.03,
+        "pvpTierEatRatioBonus": 0.03,
+        "pvpTierBonusR": 3.0
       }
     },
     "agar-advanced": {
@@ -51,7 +60,16 @@
         "speedMinMul": 0.25,
         "speedCurvePow": 1.25,
         "boostEnabled": false,
-        "boostMul": 1.15
+        "boostMul": 1.15,
+
+        "maxRadius": 92,
+        "powerScoreStart": 140,
+        "powerScoreStep": 80,
+        "powerMaxTier": 10,
+
+        "pvpEatRatioMin": 1.03,
+        "pvpTierEatRatioBonus": 0.03,
+        "pvpTierBonusR": 3.0
       }
     }
   }

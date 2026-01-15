@@ -209,6 +209,13 @@ Maintain this list by checking items off as you ship.
 Notes:
 - Size growth is not designed to scale to infinity. After a cap/threshold, use other ways to represent “size / eat power” (e.g. tiers/labels/effects) instead of camera zoom.
 
+Implemented (current):
+- Physical size is capped via `rules.<agar-*>.agar.maxRadius`.
+- After reaching the cap, "eat power" continues to grow via score-derived tiers:
+  - `powerScoreStart`, `powerScoreStep`, `powerMaxTier`
+  - PVP bonuses: `pvpTierEatRatioBonus`, `pvpTierBonusR`, `pvpEatRatioMin`
+  - Client renders a subtle halo when near cap and tier > 0.
+
 ### P1 (Agar-style features)
 - [ ] Split + merge cooldown
 - [ ] Eject mass
@@ -217,7 +224,7 @@ Notes:
 
 ### P1/P2 (UX)
 - [ ] Settings panel (bots / movement / controls)
-- [ ] Post-cap size/power representation (no camera zoom)
+- [x] Post-cap size/power representation (no camera zoom)
 
 ### P1 (PaperIO-style features)
 - [ ] Territory fill + scoring

@@ -34,15 +34,32 @@ function normalizeAgarConfig(agar) {
   const boostMul = Number.isFinite(agar?.boostMul) ? clamp(agar.boostMul, 1.0, 2.0) : 1.15;
   const deathMode = agar?.deathMode === 'respawn' || agar?.deathMode === 'kick' ? agar.deathMode : 'kick';
 
+  // Growth cap: physical radius will not exceed this.
+  // After reaching this cap, "吞噬能力" can still progress via power tiers derived from score.
+  const maxRadius = Number.isFinite(agar?.maxRadius) ? clamp(agar.maxRadius, 18, 260) : 92;
+
+  // Power tiers derived from score (no protocol changes needed: score is already in snapshots).
+  const powerScoreStart = Number.isFinite(agar?.powerScoreStart) ? clamp(Math.floor(agar.powerScoreStart), 0, 1_000_000) : 140;
+  const powerScoreStep = Number.isFinite(agar?.powerScoreStep) ? clamp(Math.floor(agar.powerScoreStep), 1, 1_000_000) : 80;
+  const powerMaxTier = Number.isFinite(agar?.powerMaxTier) ? clamp(Math.floor(agar.powerMaxTier), 0, 50) : 10;
+
   // PVP (player eats player)
   const pvpEnabled = typeof agar?.pvpEnabled === 'boolean' ? agar.pvpEnabled : false;
   // Size ratio required to eat: predator.r >= victim.r * pvpEatRatio
   const pvpEatRatio = Number.isFinite(agar?.pvpEatRatio) ? clamp(agar.pvpEatRatio, 1.01, 3.0) : 1.15;
+  // Minimum possible ratio after tier bonuses.
+  const pvpEatRatioMin = Number.isFinite(agar?.pvpEatRatioMin) ? clamp(agar.pvpEatRatioMin, 1.001, pvpEatRatio) : 1.03;
   // How deep the victim must be inside the predator to count as eaten.
   // We compute: eatDist = predator.r - victim.r * pvpEatOffsetMul
   const pvpEatOffsetMul = Number.isFinite(agar?.pvpEatOffsetMul) ? clamp(agar.pvpEatOffsetMul, 0.0, 1.25) : 0.25;
   // How much of the victim's area converts into predator growth.
   const pvpGrowthMul = Number.isFinite(agar?.pvpGrowthMul) ? clamp(agar.pvpGrowthMul, 0.0, 2.0) : 1.0;
+
+  // Tier bonuses (predatorTier - victimTier):
+  // - Reduces required size ratio by pvpTierEatRatioBonus per tier advantage.
+  // - Adds effective reach/size bonus (in radius units) via pvpTierBonusR.
+  const pvpTierEatRatioBonus = Number.isFinite(agar?.pvpTierEatRatioBonus) ? clamp(agar.pvpTierEatRatioBonus, 0.0, 0.25) : 0.03;
+  const pvpTierBonusR = Number.isFinite(agar?.pvpTierBonusR) ? clamp(agar.pvpTierBonusR, 0.0, 40.0) : 3.0;
 
   return {
     pelletCount,
@@ -53,10 +70,17 @@ function normalizeAgarConfig(agar) {
     boostEnabled,
     boostMul,
     deathMode,
+    maxRadius,
+    powerScoreStart,
+    powerScoreStep,
+    powerMaxTier,
     pvpEnabled,
     pvpEatRatio,
+    pvpEatRatioMin,
     pvpEatOffsetMul,
-    pvpGrowthMul
+    pvpGrowthMul,
+    pvpTierEatRatioBonus,
+    pvpTierBonusR
   };
 }
 
@@ -74,6 +98,14 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
 
   const pellets = [];
   let pelletSeq = 0;
+
+  function powerTierFromScore(score) {
+    const s = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
+    if (agarCfg.powerMaxTier <= 0) return 0;
+    if (s < agarCfg.powerScoreStart) return 0;
+    const tier = 1 + Math.floor((s - agarCfg.powerScoreStart) / agarCfg.powerScoreStep);
+    return clamp(tier, 0, agarCfg.powerMaxTier);
+  }
   function addPellet() {
     pellets.push({
       id: `p${pelletSeq++}`,
@@ -271,7 +303,7 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
           p.score += 1;
           // area-based growth, capped
           const area = Math.PI * p.r * p.r + Math.PI * pel.r * pel.r * agarCfg.pelletGrowthMul;
-          p.r = clamp(Math.sqrt(area / Math.PI), 12, 120);
+          p.r = clamp(Math.sqrt(area / Math.PI), 12, agarCfg.maxRadius);
           // respawn pellet
           pel.x = rand(30, width - 30);
           pel.y = rand(30, height - 30);
@@ -284,7 +316,13 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
     if (agarCfg.pvpEnabled && players.size >= 2) {
       // Deterministic processing: larger first, stable tie-break by id.
       const arr = Array.from(players.values());
-      arr.sort((a, b) => (b.r - a.r) || String(a.id).localeCompare(String(b.id)));
+      arr.sort((a, b) => {
+        const aTier = powerTierFromScore(a?.score);
+        const bTier = powerTierFromScore(b?.score);
+        const aEff = (a?.r || 0) + aTier * agarCfg.pvpTierBonusR;
+        const bEff = (b?.r || 0) + bTier * agarCfg.pvpTierBonusR;
+        return (bEff - aEff) || String(a.id).localeCompare(String(b.id));
+      });
 
       const eatenThisStep = new Set();
 
@@ -301,14 +339,26 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
           if (eatenThisStep.has(victim.id)) continue;
           if (!players.has(victim.id)) continue;
 
+          const predatorTier = powerTierFromScore(predator.score);
+          const victimTier = powerTierFromScore(victim.score);
+          const tierAdv = Math.max(0, predatorTier - victimTier);
+
+          const requiredRatio = clamp(
+            agarCfg.pvpEatRatio - tierAdv * agarCfg.pvpTierEatRatioBonus,
+            agarCfg.pvpEatRatioMin,
+            agarCfg.pvpEatRatio
+          );
+
+          const predatorEffR = predator.r + tierAdv * agarCfg.pvpTierBonusR;
+
           // Must be sufficiently larger.
-          if (!(predator.r >= victim.r * agarCfg.pvpEatRatio)) continue;
+          if (!(predatorEffR >= victim.r * requiredRatio)) continue;
 
           const dx = predator.x - victim.x;
           const dy = predator.y - victim.y;
           const d2 = dx * dx + dy * dy;
 
-          const eatDist = predator.r - victim.r * agarCfg.pvpEatOffsetMul;
+          const eatDist = predatorEffR - victim.r * agarCfg.pvpEatOffsetMul;
           if (eatDist <= 0) continue;
           if (d2 > eatDist * eatDist) continue;
 
@@ -319,7 +369,7 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
           const predArea = Math.PI * predator.r * predator.r;
           const vicArea = Math.PI * victim.r * victim.r;
           const nextArea = predArea + vicArea * agarCfg.pvpGrowthMul;
-          predator.r = clamp(Math.sqrt(nextArea / Math.PI), 12, 220);
+          predator.r = clamp(Math.sqrt(nextArea / Math.PI), 12, agarCfg.maxRadius);
 
           // Score bump for kills (keep it meaningful vs pellets).
           predator.score = (predator.score ?? 0) + Math.max(10, Math.round(victim.r));
