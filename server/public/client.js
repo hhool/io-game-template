@@ -2418,7 +2418,8 @@ setInterval(() => {
 
 // Input uplink: only send when changed (reduces upstream bandwidth).
 const INPUT_SEND_HZ = 20;
-const INPUT_FORCE_EVERY_MS = 600;
+// Set to Infinity to disable forced periodic sends (true send-on-change only).
+const INPUT_FORCE_EVERY_MS = Infinity;
 const INPUT_AXIS_QUANT = 127; // quantize [-1..1] to int steps to avoid jitter spam
 let lastSentInput = null;
 let lastSentInputAt = 0;
@@ -2450,7 +2451,7 @@ function sendInputIfNeeded({ force = false } = {}) {
   const now = Date.now();
   const next = normalizeInputPayload(getAxis());
   const unchanged = inputsEqual(next, lastSentInput);
-  const due = now - lastSentInputAt >= INPUT_FORCE_EVERY_MS;
+  const due = Number.isFinite(INPUT_FORCE_EVERY_MS) && now - lastSentInputAt >= INPUT_FORCE_EVERY_MS;
 
   if (force || !unchanged || due) {
     socket.emit("input", next);
