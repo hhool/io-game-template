@@ -204,14 +204,20 @@ Maintain this list by checking items off as you ship.
 ### P0 (Playable loop)
 - [x] Eat / mass growth rules (pellets + players)
 - [x] Death + respawn loop
-- [ ] Camera zoom that scales with player size
-- [ ] Basic in-game HUD (players, ping, FPS) + settings panel for bots/movement/controls
+- [x] Basic in-game HUD (players, ping, FPS)
+
+Notes:
+- Size growth is not designed to scale to infinity. After a cap/threshold, use other ways to represent “size / eat power” (e.g. tiers/labels/effects) instead of camera zoom.
 
 ### P1 (Agar-style features)
 - [ ] Split + merge cooldown
 - [ ] Eject mass
 - [ ] Virus / hazards
 - [ ] Skins + basic abuse protection (nick filtering)
+
+### P1/P2 (UX)
+- [ ] Settings panel (bots / movement / controls)
+- [ ] Post-cap size/power representation (no camera zoom)
 
 ### P1 (PaperIO-style features)
 - [ ] Territory fill + scoring
