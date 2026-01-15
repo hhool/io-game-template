@@ -8,7 +8,15 @@
 
 html,body{height:100%;margin:0;background:radial-gradient(1200px 800px at 50% 30%, #182026, var(--bg));color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;overflow:hidden}
 
-canvas{display:block;width:100vw;height:100vh;touch-action:none}
+canvas{
+  display:block;
+  width:100vw;
+  /* Mobile browsers: 100vh can include browser UI and cause non-uniform scaling */
+  height:100vh;
+  height:100svh;
+  height:100dvh;
+  touch-action:none;
+}
 
 .hud{
   position:fixed;

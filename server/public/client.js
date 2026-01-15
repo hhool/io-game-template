@@ -203,11 +203,27 @@ setupCustomDropdownForSelect(rulesSel);
 
 function resize() {
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  canvas.width = Math.floor(window.innerWidth * dpr);
-  canvas.height = Math.floor(window.innerHeight * dpr);
+
+  // Use the element's real CSS pixel size. On mobile, `100vh` / `innerHeight` can disagree
+  // (browser UI shows/hides), which causes the canvas to be stretched and circles become ovals.
+  const r = canvas.getBoundingClientRect();
+  const cssW = Math.max(1, r.width || window.innerWidth || 1);
+  const cssH = Math.max(1, r.height || window.innerHeight || 1);
+  const w = Math.floor(cssW * dpr);
+  const h = Math.floor(cssH * dpr);
+
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+
+  // Draw using CSS pixel coordinates.
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener("resize", resize);
+// Mobile browser UI can change the visual viewport without firing a window resize.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", resize);
+  window.visualViewport.addEventListener("scroll", resize);
+}
 resize();
 
 const STORAGE_TOKEN = "1wlgame_token";
