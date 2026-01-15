@@ -252,7 +252,14 @@ Implemented (current):
   - Client renders a subtle halo when near cap and tier > 0.
 
 ### P1 (Agar-style features)
-- [ ] Split + merge cooldown
+- [ ] Split/Merge milestone (scoped breakdown)
+- [ ] Split: input + server command (e.g. Space => split), AC: one split per press; rate-limited; ignored when not allowed
+- [ ] Split: mass conservation + cell spawn, AC: total area conserved (within epsilon); child inherits color/name; stable ids
+- [ ] Split: impulse/velocity tuning, AC: new cell launches forward; slows with damping; no tunneling through border
+- [ ] Merge: per-cell merge timer, AC: cannot merge before `mergeDelayMs`; merges when overlapping after delay
+- [ ] Collision rules: split cells interact correctly, AC: pellet eating + player eating behave same as single-cell; no double-count scoring
+- [ ] HUD/feedback: cooldown indicator, AC: shows split availability + merge countdown (optional) without affecting perf
+- [ ] Config knobs: tune split/merge params, AC: config.json (and env overrides if applicable) changes behavior without code edits
 - [ ] Eject mass
 - [ ] Virus / hazards
 - [ ] Skins + basic abuse protection (nick filtering)
