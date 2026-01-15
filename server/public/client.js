@@ -761,6 +761,9 @@ const playerPidById = new Map();
 const playerIdByPid = new Map();
 // Slim state uses numeric pid; keep an authoritative local state to apply deltas.
 const playersStateByPid = new Map();
+
+// Pellets are sent as full snapshots occasionally and as deltas most ticks.
+const pelletsStateById = new Map();
 let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
@@ -2380,6 +2383,7 @@ socket.on("room:left", () => {
   playerPidById.clear();
   playerIdByPid.clear();
   playersStateByPid.clear();
+  pelletsStateById.clear();
 
   // Exit returns to login screen (user requested).
   showLogin("");
@@ -2412,10 +2416,37 @@ socket.on("state", (snap) => {
     renderRoomLabel();
   }
 
-  // Bandwidth optimization: server may omit `pellets` on some ticks.
-  // Preserve the last known pellet list so rendering stays stable.
-  if (snap && !Object.prototype.hasOwnProperty.call(snap, "pellets") && lastSnapshot?.pellets) {
-    snap = { ...snap, pellets: lastSnapshot.pellets };
+  // Bandwidth optimization: pellets are full or delta.
+  if (snap) {
+    if (Array.isArray(snap.pellets)) {
+      pelletsStateById.clear();
+      for (const pel of snap.pellets) {
+        const id = pel?.id;
+        if (!id) continue;
+        const r = Number.isFinite(pel?.r10) ? pel.r10 / 10 : Number(pel?.r) || 0;
+        pelletsStateById.set(id, { id, x: Number(pel?.x) || 0, y: Number(pel?.y) || 0, r });
+      }
+    } else {
+      const gone = Array.isArray(snap.pelletsGone) ? snap.pelletsGone : [];
+      for (const id of gone) {
+        if (!id) continue;
+        pelletsStateById.delete(id);
+      }
+      const changed = Array.isArray(snap.pelletsD) ? snap.pelletsD : [];
+      for (const pel of changed) {
+        const id = pel?.id;
+        if (!id) continue;
+        const r = Number.isFinite(pel?.r10) ? pel.r10 / 10 : Number(pel?.r) || 0;
+        pelletsStateById.set(id, { id, x: Number(pel?.x) || 0, y: Number(pel?.y) || 0, r });
+      }
+    }
+
+    if (pelletsStateById.size) {
+      snap = { ...snap, pellets: Array.from(pelletsStateById.values()) };
+    } else if (!Object.prototype.hasOwnProperty.call(snap, "pellets") && lastSnapshot?.pellets) {
+      // Fallback for older servers: preserve last known pellet list.
+      snap = { ...snap, pellets: lastSnapshot.pellets };
+    }
   }
 
   // Bandwidth optimization: server may send players as full or delta updates.
