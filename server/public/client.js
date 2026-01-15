@@ -454,6 +454,7 @@ const I18N = {
     hudHide: "Hide HUD",
     minimap: "Minimap",
     joining: "Joining…",
+    respawning: "Respawning…",
     loginWait: "Waiting for server…",
     connecting: "connecting…",
     connected: "connected",
@@ -504,6 +505,7 @@ const I18N = {
     hudHide: "Скрыть HUD",
     minimap: "Миникарта",
     joining: "Входим…",
+    respawning: "Возрождение…",
     loginWait: "Ожидание сервера…",
     connecting: "подключение…",
     connected: "подключено",
@@ -554,6 +556,7 @@ const I18N = {
     hudHide: "Masquer HUD",
     minimap: "Minicarte",
     joining: "Connexion…",
+    respawning: "Réapparition…",
     loginWait: "En attente du serveur…",
     connecting: "connexion…",
     connected: "connecté",
@@ -604,6 +607,7 @@ const I18N = {
     hudHide: "隐藏 HUD",
     minimap: "小地图",
     joining: "正在进入…",
+    respawning: "正在重生…",
     loginWait: "等待服务器响应…",
     connecting: "连接中…",
     connected: "已连接",
@@ -654,6 +658,7 @@ const I18N = {
     hudHide: "HUD ausblenden",
     minimap: "Minikarte",
     joining: "Beitreten…",
+    respawning: "Wiederbelebung…",
     loginWait: "Warte auf Server…",
     connecting: "verbinde…",
     connected: "verbunden",
@@ -704,6 +709,7 @@ const I18N = {
     hudHide: "إخفاء HUD",
     minimap: "خريطة مصغّرة",
     joining: "جارٍ الدخول…",
+    respawning: "إعادة الظهور…",
     loginWait: "بانتظار الخادم…",
     connecting: "جارٍ الاتصال…",
     connected: "متصل",
@@ -753,6 +759,60 @@ let currentRoomId = null;
 let currentMode = null;
 let currentRulesId = null;
 let pendingRulesId = null;
+
+// Auto-respawn loop: after death, client re-joins and starts a new life.
+let respawnInFlight = false;
+let respawnTimer = null;
+
+function clearRespawnTimer() {
+  if (respawnTimer) {
+    clearTimeout(respawnTimer);
+    respawnTimer = null;
+  }
+}
+
+function respawnCfg() {
+  const g = config?.gameplay?.respawn || {};
+  const enabled = g.enabled !== false;
+  const delayMs = Number.isFinite(g.delayMs) ? Math.max(0, Math.min(5000, Math.floor(g.delayMs))) : 650;
+  return { enabled, delayMs };
+}
+
+function beginRespawnJoin() {
+  if (!socket?.connected) return;
+  if (!nick) return;
+  if (respawnInFlight && joinRequested) return;
+  if (joinInFlight) return;
+  if (currentRoomId) return;
+
+  pendingRulesId = normalizeRulesId(pendingRulesId || currentRulesId || getRulesIdSelected()) || "agar-lite";
+  setRulesDisabled(true);
+
+  // Reuse the existing join flow: profile:set -> profile:ok -> tryJoinRequested().
+  joinRequested = true;
+  joinInFlight = false;
+  profileConfirmed = false;
+  setLoginMessage(t("respawning"));
+
+  try {
+    socket.emit("profile:set", { nick });
+  } catch {
+    // ignore
+  }
+  tryJoinRequested();
+}
+
+function scheduleRespawn() {
+  clearRespawnTimer();
+  const rc = respawnCfg();
+  if (!rc.enabled) return;
+
+  respawnInFlight = true;
+  statusEl.textContent = t("respawning");
+  respawnTimer = setTimeout(() => {
+    beginRespawnJoin();
+  }, rc.delayMs);
+}
 
 // Player meta is broadcast separately to reduce state payload size.
 // Keyed by numeric pid (compact id used in state payloads).
@@ -810,6 +870,12 @@ const defaultConfig = {
   },
   guide: {
     touchGuideOnFirstUse: true,
+  },
+  gameplay: {
+    respawn: {
+      enabled: true,
+      delayMs: 650,
+    },
   },
 };
 
@@ -1585,6 +1651,8 @@ function recordResult(score) {
 }
 
 function showLogin(message = "") {
+  respawnInFlight = false;
+  clearRespawnTimer();
   loginEl.classList.remove("hidden");
   hudEl.classList.add("hidden");
   if (btnHudToggle) btnHudToggle.classList.add("hidden");
@@ -2224,6 +2292,8 @@ socket.on("connect", () => {
 
 socket.on("disconnect", () => {
   statusEl.textContent = t("disconnected");
+  respawnInFlight = false;
+  clearRespawnTimer();
   joinInFlight = false;
   currentRoomId = null;
   currentMode = null;
@@ -2246,6 +2316,8 @@ socket.on("connect_error", (err) => {
   const msg = err?.message || String(err);
   statusEl.textContent = `${t("connectError")} (${backendUrl}): ${msg}`;
   console.error("[socket] connect_error", err);
+  respawnInFlight = false;
+  clearRespawnTimer();
   joinInFlight = false;
   currentRoomId = null;
   currentMode = null;
@@ -2307,6 +2379,8 @@ socket.on("profile:ok", (payload) => {
 });
 
 socket.on("login:required", () => {
+  respawnInFlight = false;
+  clearRespawnTimer();
   profileConfirmed = false;
   joinInFlight = false;
   showLogin(t("needNick"));
@@ -2329,21 +2403,26 @@ socket.on("game:over", (payload = {}) => {
     return I18N[lang]?.gameOver ? I18N[lang].gameOver(score) : I18N.en.gameOver(score);
   })();
 
+  const rulesIdForRespawn = normalizeRulesId(currentRulesId || pendingRulesId || getRulesIdSelected()) || "agar-lite";
+
   // reset in-room UI
   currentRoomId = null;
   currentMode = null;
-  currentRulesId = null;
-  pendingRulesId = null;
+  currentRulesId = rulesIdForRespawn;
+  pendingRulesId = rulesIdForRespawn;
   renderRoomLabel();
   lbEl.innerHTML = "";
   if (playersEl) playersEl.innerHTML = "";
   if (playersTitleEl) playersTitleEl.textContent = t("players");
   btnLeave.disabled = true;
-  setRulesDisabled(false);
+  setRulesDisabled(true);
 
-  // go back to login page
-  profileConfirmed = false;
-  joinInFlight = false;
+  // Clear state caches for the next life.
+  playersMeta.clear();
+  playerPidById.clear();
+  playerIdByPid.clear();
+  playersStateByPid.clear();
+  pelletsStateById.clear();
 
   // Stop WS state stream (if enabled)
   try {
@@ -2357,10 +2436,15 @@ socket.on("game:over", (payload = {}) => {
   wsNeedsFullPlayers = false;
   wsNeedsFullPellets = false;
 
-  showLogin(gameOverMsg);
+  // Stay in-game and start respawn loop.
+  showGame();
+  statusEl.textContent = `${gameOverMsg} · ${t("respawning")}`;
+  scheduleRespawn();
 });
 
 socket.on("room:joined", ({ room, mode }) => {
+  respawnInFlight = false;
+  clearRespawnTimer();
   showGame();
   joinInFlight = false;
   currentRoomId = room?.id ?? null;
@@ -2396,18 +2480,21 @@ socket.on("bots:ok", (payload) => {
 });
 
 socket.on("room:left", () => {
+  const shouldRespawn = respawnInFlight;
   joinInFlight = false;
   currentRoomId = null;
   currentMode = null;
-  currentRulesId = null;
-  pendingRulesId = null;
+  if (!shouldRespawn) {
+    currentRulesId = null;
+    pendingRulesId = null;
+  }
   renderRoomLabel();
   btnLeave.disabled = true;
   lbEl.innerHTML = "";
   if (playersEl) playersEl.innerHTML = "";
   if (playersTitleEl) playersTitleEl.textContent = t("players");
-  statusEl.textContent = `${t("connected")} (${backendUrl})`;
-  setRulesDisabled(false);
+  statusEl.textContent = shouldRespawn ? t("respawning") : `${t("connected")} (${backendUrl})`;
+  setRulesDisabled(shouldRespawn);
 
   // Stop WS state stream (if enabled)
   try {
@@ -2427,6 +2514,12 @@ socket.on("room:left", () => {
   playerIdByPid.clear();
   playersStateByPid.clear();
   pelletsStateById.clear();
+
+  if (shouldRespawn) {
+    showGame();
+    beginRespawnJoin();
+    return;
+  }
 
   // Exit returns to login screen (user requested).
   showLogin("");
@@ -2965,6 +3058,8 @@ setInterval(() => {
 }, Math.floor(1000 / INPUT_SEND_HZ));
 
 btnLeave.addEventListener("click", () => {
+  respawnInFlight = false;
+  clearRespawnTimer();
   socket.emit("room:leave");
   // immediate UX: return to login overlay while waiting for room:left
   showLogin("");
