@@ -8,6 +8,64 @@
 
 推荐线上形态：**Docker Compose + Caddy（HTTPS 反代）**。
 
+## 部署（Render）
+
+Render 最简单的方式是创建一个 **Web Service**（它支持 WebSocket，适配 Socket.IO）。
+
+下面给两种方案：
+
+### 方案 1：Render Web Service（非 Docker / 原生 Node）
+
+1）创建服务
+
+- Render Dashboard → New → **Web Service**
+- 连接你的 Git 仓库（包含本项目）
+
+2）配置构建与启动命令（关键）
+
+- Build Command：`cd server && npm ci --omit=dev`
+- Start Command：`cd server && npm run start`
+
+3）环境变量
+
+- `HOST=0.0.0.0`
+- `PORT`：Render 会自动注入（通常无需手动设置；服务端会读取 `process.env.PORT`）
+- `REDIS_URL`（可选）：需要多实例横向扩容时再配（单实例不需要）
+
+4）验证
+
+- 部署完成后，访问：`https://<你的render域名>/healthz`
+- 浏览器打开：`https://<你的render域名>/`，确认能进入房间并正常连接。
+
+备注：免费档/休眠会影响长连接游戏体验；用于演示可以，线上建议用不会休眠的实例规格。
+
+### 方案 2：Render Web Service（Docker）
+
+适合你希望严格按 `server/Dockerfile` 构建运行的情况。
+
+1）创建服务
+
+- Render Dashboard → New → **Web Service**
+- 选择 Environment/Runtime 为 **Docker**
+
+2）Dockerfile 路径
+
+- 指定 Dockerfile：`server/Dockerfile`
+
+3）端口与环境变量（关键）
+
+- Render 的 Docker Web Service 需要你指定容器监听端口。
+- 本项目 Dockerfile 默认 `PORT=6868` 且 `EXPOSE 6868`，因此建议：
+	- Render “Port” 填 `6868`
+	- 或者在环境变量里设置 `PORT=<你在Render里填写的Port>`（两者保持一致）
+- 同时设置：`HOST=0.0.0.0`
+
+4）验证
+
+- `https://<你的render域名>/healthz`
+- `https://<你的render域名>/`
+
+
 ## 前置条件
 
 - Linux VPS，已安装 Docker + Docker Compose v2

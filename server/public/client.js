@@ -1944,14 +1944,26 @@ nickInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") btnLogin.click();
 });
 
-// If the page is opened from another port (or even file://), force the Socket.IO
-// connection to the backend server on :6868 by default.
+// Socket.IO backend URL selection.
+//
+// Default: same-origin (works for HTTPS platforms like Render).
+// Local dev convenience: when hosting the client on another local port,
+// fall back to http://<host>:6868 unless on HTTPS (mixed content).
 const qs = new URLSearchParams(window.location.search);
+const forcedBackendUrl = qs.get("server");
+const isHttpsPage = window.location.protocol === "https:";
+const host = window.location.hostname || "localhost";
+const isLocalHost = host === "localhost" || host === "127.0.0.1";
+
 const backendUrl =
-  qs.get("server") ||
+  forcedBackendUrl ||
   (window.location.port === "6868"
     ? window.location.origin
-    : `http://${window.location.hostname || "localhost"}:6868`);
+    : isHttpsPage
+      ? window.location.origin
+      : isLocalHost
+        ? `http://${host}:6868`
+        : window.location.origin);
 
 // Optional: enable WS state channel via URL param:
 // - ?state=ws
