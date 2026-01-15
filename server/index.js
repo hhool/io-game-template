@@ -356,6 +356,10 @@ setInterval(() => {
   // Bandwidth control: player meta (name/color/isBot) changes rarely; broadcast it periodically and on change.
   const PLAYERS_META_SEND_EVERY_MS = 2000;
 
+  // Bandwidth control: player positions update frequently.
+  // Send full player state periodically for resync; otherwise send deltas.
+  const PLAYERS_FULL_SEND_EVERY_MS = 2000;
+
   for (const room of rooms.rooms.values()) {
     if (room.players.size === 0 && room.spectators.size === 0) continue;
 
@@ -479,7 +483,41 @@ setInterval(() => {
           .filter(Boolean)
       : [];
 
-    const payload = { roomId: room.id, ...snap, players: slimPlayers };
+    // Delta-compress players list.
+    const playersStateCache = room._playersStateCache || (room._playersStateCache = new Map());
+    const seenPids = new Set();
+    const playersD = [];
+    for (const p of slimPlayers) {
+      seenPids.add(p.pid);
+      const prev = playersStateCache.get(p.pid);
+      if (!prev || prev.x !== p.x || prev.y !== p.y || prev.r10 !== p.r10 || prev.score !== p.score) {
+        playersD.push(p);
+        playersStateCache.set(p.pid, p);
+      }
+    }
+
+    const playersGone = [];
+    for (const pid of playersStateCache.keys()) {
+      if (!seenPids.has(pid)) {
+        playersGone.push(pid);
+        playersStateCache.delete(pid);
+      }
+    }
+
+    const lastPlayersFullSentAt = room._playersFullSentAt || 0;
+    const sendFullPlayers = !lastPlayersFullSentAt || now - lastPlayersFullSentAt >= PLAYERS_FULL_SEND_EVERY_MS;
+    if (sendFullPlayers) room._playersFullSentAt = now;
+
+    const payload = { roomId: room.id, ...snap };
+    if (sendFullPlayers) {
+      payload.players = slimPlayers;
+    } else {
+      payload.playersD = playersD;
+      payload.playersGone = playersGone;
+      // Omit full list when sending delta.
+      delete payload.players;
+    }
+
     if (!includePellets) delete payload.pellets;
     io.to(room.id).emit('state', payload);
     if (leaderboardDue) io.to(room.id).emit('leaderboard', { roomId: room.id, top: leaderboard });

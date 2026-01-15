@@ -759,6 +759,8 @@ let pendingRulesId = null;
 const playersMeta = new Map();
 const playerPidById = new Map();
 const playerIdByPid = new Map();
+// Slim state uses numeric pid; keep an authoritative local state to apply deltas.
+const playersStateByPid = new Map();
 let world = { width: 2800, height: 1800 };
 let lastSnapshot = { ts: 0, players: [], pellets: [] };
 let prevSnapshot = null;
@@ -2377,6 +2379,7 @@ socket.on("room:left", () => {
   playersMeta.clear();
   playerPidById.clear();
   playerIdByPid.clear();
+  playersStateByPid.clear();
 
   // Exit returns to login screen (user requested).
   showLogin("");
@@ -2415,58 +2418,71 @@ socket.on("state", (snap) => {
     snap = { ...snap, pellets: lastSnapshot.pellets };
   }
 
-  // Bandwidth optimization: server may omit player meta from `state.players`.
-  // Rehydrate from `players:meta` cache so the rest of the client can keep using p.name/p.color/p.isBot.
-  if (snap && Array.isArray(snap.players)) {
-    const livePids = new Set();
-    const hydrated = snap.players
-      .map((p) => {
-        // New slim format: { pid, x, y, r10, score }
-        if (Number.isFinite(p?.pid)) {
-          const pid = p.pid;
-          livePids.add(pid);
-          const meta = playersMeta.get(pid);
-          const id = meta?.id || playerIdByPid.get(pid) || null;
-          return {
-            id,
-            pid,
-            x: Number(p?.x) || 0,
-            y: Number(p?.y) || 0,
-            r: Number.isFinite(p?.r10) ? p.r10 / 10 : Number(p?.r) || 0,
-            score: Number(p?.score) || 0,
-            name: meta?.name ?? "",
-            color: meta?.color ?? "",
-            isBot: meta?.isBot ?? false,
-          };
-        }
-
-        // Backward-compat: old format still works.
-        const id = p?.id;
-        const pid = id ? playerPidById.get(id) : null;
-        if (pid != null) livePids.add(pid);
-        const meta = pid != null ? playersMeta.get(pid) : null;
-        return {
-          ...p,
-          pid,
-          name: meta?.name ?? p?.name ?? "",
-          color: meta?.color ?? p?.color ?? "",
-          isBot: meta?.isBot ?? Boolean(p?.isBot),
-        };
-      })
-      .filter((p) => p && p.id);
-
-    // Prune meta/mappings for players no longer present.
-    for (const pid of playersMeta.keys()) {
-      if (!livePids.has(pid)) playersMeta.delete(pid);
+  // Bandwidth optimization: server may send players as full or delta updates.
+  // Keep a local map keyed by pid, then rehydrate to the legacy shape.
+  if (snap) {
+    if (Array.isArray(snap.players)) {
+      playersStateByPid.clear();
+      for (const p of snap.players) {
+        if (!Number.isFinite(p?.pid)) continue;
+        playersStateByPid.set(p.pid, {
+          pid: p.pid,
+          x: Number(p?.x) || 0,
+          y: Number(p?.y) || 0,
+          r10: Number(p?.r10) || 0,
+          score: Number(p?.score) || 0,
+        });
+      }
+    } else {
+      const changed = Array.isArray(snap.playersD) ? snap.playersD : [];
+      const gone = Array.isArray(snap.playersGone) ? snap.playersGone : [];
+      for (const pid of gone) {
+        if (!Number.isFinite(pid)) continue;
+        playersStateByPid.delete(pid);
+      }
+      for (const p of changed) {
+        if (!Number.isFinite(p?.pid)) continue;
+        playersStateByPid.set(p.pid, {
+          pid: p.pid,
+          x: Number(p?.x) || 0,
+          y: Number(p?.y) || 0,
+          r10: Number(p?.r10) || 0,
+          score: Number(p?.score) || 0,
+        });
+      }
     }
-    for (const [id, pid] of playerPidById) {
-      if (!livePids.has(pid)) playerPidById.delete(id);
-    }
-    for (const pid of playerIdByPid.keys()) {
-      if (!livePids.has(pid)) playerIdByPid.delete(pid);
+
+    // Rehydrate to legacy `players` array shape expected by renderers.
+    const hydrated = [];
+    for (const st of playersStateByPid.values()) {
+      const meta = playersMeta.get(st.pid);
+      const id = meta?.id || playerIdByPid.get(st.pid) || `p${st.pid}`;
+      hydrated.push({
+        id,
+        pid: st.pid,
+        x: st.x,
+        y: st.y,
+        r: st.r10 / 10,
+        score: st.score,
+        name: meta?.name ?? "",
+        color: meta?.color ?? "",
+        isBot: meta?.isBot ?? false,
+      });
     }
 
     snap = { ...snap, players: hydrated };
+  }
+
+  // Prune meta/mappings for players no longer present.
+  const livePids = new Set(playersStateByPid.keys());
+  for (const pid of playersMeta.keys()) {
+    if (!livePids.has(pid)) playersMeta.delete(pid);
+  }
+  for (const [id, pid] of playerPidById) {
+    if (!livePids.has(pid)) playerPidById.delete(id);
+  }
+  for (const pid of playerIdByPid.keys()) {
+    if (!livePids.has(pid)) playerIdByPid.delete(pid);
   }
 
   prevSnapshot = lastSnapshot;
