@@ -85,7 +85,13 @@ export function createWorldStateForRules({ rulesId, world, movement, rulesConfig
           speedCurvePow: 1.25,
           boostEnabled: false,
           boostMul: 1.15,
-          deathMode: 'respawn'
+          deathMode: 'respawn',
+
+          // PVP
+          pvpEnabled: true,
+          pvpEatRatio: 1.15,
+          pvpEatOffsetMul: 0.25,
+          pvpGrowthMul: 1.0
         }
       : {
           borderDeath: true,
@@ -95,7 +101,13 @@ export function createWorldStateForRules({ rulesId, world, movement, rulesConfig
           speedCurvePow: 1.0,
           boostEnabled: true,
           boostMul: 1.15,
-          deathMode: 'kick'
+          deathMode: 'kick',
+
+          // PVP
+          pvpEnabled: true,
+          pvpEatRatio: 1.15,
+          pvpEatOffsetMul: 0.25,
+          pvpGrowthMul: 1.0
         };
 
   const envPrefix = rulesOut === 'agar-advanced' ? 'AGAR_ADV' : 'AGAR_LITE';
@@ -114,7 +126,12 @@ export function createWorldStateForRules({ rulesId, world, movement, rulesConfig
     speedCurvePow: Number.isFinite(cfgAgar?.speedCurvePow) ? cfgAgar.speedCurvePow : agarDefaults.speedCurvePow,
     boostEnabled: typeof cfgAgar?.boostEnabled === 'boolean' ? cfgAgar.boostEnabled : agarDefaults.boostEnabled,
     boostMul: Number.isFinite(cfgAgar?.boostMul) ? cfgAgar.boostMul : agarDefaults.boostMul,
-    deathMode: cfgAgar?.deathMode === 'respawn' || cfgAgar?.deathMode === 'kick' ? cfgAgar.deathMode : agarDefaults.deathMode
+    deathMode: cfgAgar?.deathMode === 'respawn' || cfgAgar?.deathMode === 'kick' ? cfgAgar.deathMode : agarDefaults.deathMode,
+
+    pvpEnabled: typeof cfgAgar?.pvpEnabled === 'boolean' ? cfgAgar.pvpEnabled : agarDefaults.pvpEnabled,
+    pvpEatRatio: Number.isFinite(cfgAgar?.pvpEatRatio) ? cfgAgar.pvpEatRatio : agarDefaults.pvpEatRatio,
+    pvpEatOffsetMul: Number.isFinite(cfgAgar?.pvpEatOffsetMul) ? cfgAgar.pvpEatOffsetMul : agarDefaults.pvpEatOffsetMul,
+    pvpGrowthMul: Number.isFinite(cfgAgar?.pvpGrowthMul) ? cfgAgar.pvpGrowthMul : agarDefaults.pvpGrowthMul
   };
 
   const ws = createWorldState({ width: world.width, height: world.height }, { movement, agar });

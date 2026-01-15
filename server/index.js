@@ -341,6 +341,10 @@ setInterval(() => {
       const session = rooms.getSessionByPlayerId(ev.id);
       if (!session) continue;
 
+      const killerId = ev.by || null;
+      const killerSession = killerId ? rooms.getSessionByPlayerId(killerId) : null;
+      const killerName = killerSession?.nick || '';
+
       // Remove membership and clear room on the session
       const oldRoomId = session.roomId;
       rooms.leaveCurrentRoom(session);
@@ -351,7 +355,12 @@ setInterval(() => {
         const s = io.sockets.sockets.get(sid);
         try {
           if (oldRoomId) s?.leave(oldRoomId);
-          s?.emit('game:over', { score: ev.score ?? 0, reason: ev.reason || 'dead' });
+          s?.emit('game:over', {
+            score: ev.score ?? 0,
+            reason: ev.reason || 'dead',
+            by: killerId,
+            byName: killerName
+          });
           s?.emit('room:left', { ok: true });
         } catch {
           // ignore

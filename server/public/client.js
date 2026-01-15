@@ -461,6 +461,8 @@ const I18N = {
     notConnected: "not connected",
     needNick: "Please enter a nickname first.",
     gameOver: (score) => `Game Over. Score: ${score}`,
+    gameOverEaten: (score, by) => `Eaten${by ? ` by ${by}` : ""}. Score: ${score}`,
+    gameOverBorder: (score) => `Out of bounds. Score: ${score}`,
   },
   ru: {
     loginTitle: "1wlgame",
@@ -509,6 +511,8 @@ const I18N = {
     notConnected: "нет соединения",
     needNick: "Сначала введите ник.",
     gameOver: (score) => `Игра окончена. Счёт: ${score}`,
+    gameOverEaten: (score, by) => `Съели${by ? `: ${by}` : ""}. Счёт: ${score}`,
+    gameOverBorder: (score) => `Вышли за границу. Счёт: ${score}`,
   },
   fr: {
     loginTitle: "1wlgame",
@@ -557,6 +561,8 @@ const I18N = {
     notConnected: "pas connecté",
     needNick: "Veuillez d'abord saisir un pseudo.",
     gameOver: (score) => `Partie terminée. Score : ${score}`,
+    gameOverEaten: (score, by) => `Dévoré${by ? ` par ${by}` : ""}. Score : ${score}`,
+    gameOverBorder: (score) => `Hors limites. Score : ${score}`,
   },
   zh: {
     loginTitle: "1wlgame",
@@ -605,6 +611,8 @@ const I18N = {
     notConnected: "未连接",
     needNick: "请先输入昵称。",
     gameOver: (score) => `游戏结束，得分：${score}`,
+    gameOverEaten: (score, by) => `被吞噬${by ? `（${by}）` : ""}，得分：${score}`,
+    gameOverBorder: (score) => `越界死亡，得分：${score}`,
   },
   de: {
     loginTitle: "1wlgame",
@@ -653,6 +661,8 @@ const I18N = {
     notConnected: "nicht verbunden",
     needNick: "Bitte zuerst einen Nickname eingeben.",
     gameOver: (score) => `Game Over. Score: ${score}`,
+    gameOverEaten: (score, by) => `Gefressen${by ? ` von ${by}` : ""}. Score: ${score}`,
+    gameOverBorder: (score) => `Außerhalb der Grenzen. Score: ${score}`,
   },
   ar: {
     loginTitle: "1wlgame",
@@ -701,6 +711,8 @@ const I18N = {
     notConnected: "غير متصل",
     needNick: "الرجاء إدخال الاسم أولاً.",
     gameOver: (score) => `انتهت اللعبة. النتيجة: ${score}`,
+    gameOverEaten: (score, by) => `تم افتراسك${by ? ` بواسطة ${by}` : ""}. النتيجة: ${score}`,
+    gameOverBorder: (score) => `خارج الحدود. النتيجة: ${score}`,
   },
 };
 
@@ -2278,6 +2290,19 @@ socket.on("game:over", (payload = {}) => {
   const score = payload.score ?? 0;
   recordResult(score);
 
+  const reason = String(payload.reason || "dead");
+  const by = typeof payload.byName === "string" && payload.byName.trim() ? payload.byName.trim() : payload.by;
+
+  const gameOverMsg = (() => {
+    if (reason === "eaten") {
+      return I18N[lang]?.gameOverEaten ? I18N[lang].gameOverEaten(score, by) : I18N.en.gameOverEaten(score, by);
+    }
+    if (reason === "border") {
+      return I18N[lang]?.gameOverBorder ? I18N[lang].gameOverBorder(score) : I18N.en.gameOverBorder(score);
+    }
+    return I18N[lang]?.gameOver ? I18N[lang].gameOver(score) : I18N.en.gameOver(score);
+  })();
+
   // reset in-room UI
   currentRoomId = null;
   currentMode = null;
@@ -2293,7 +2318,7 @@ socket.on("game:over", (payload = {}) => {
   // go back to login page
   profileConfirmed = false;
   joinInFlight = false;
-  showLogin(I18N[lang]?.gameOver ? I18N[lang].gameOver(score) : I18N.en.gameOver(score));
+  showLogin(gameOverMsg);
 });
 
 socket.on("room:joined", ({ room, mode }) => {

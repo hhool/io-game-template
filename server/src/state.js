@@ -33,7 +33,31 @@ function normalizeAgarConfig(agar) {
   const boostEnabled = typeof agar?.boostEnabled === 'boolean' ? agar.boostEnabled : true;
   const boostMul = Number.isFinite(agar?.boostMul) ? clamp(agar.boostMul, 1.0, 2.0) : 1.15;
   const deathMode = agar?.deathMode === 'respawn' || agar?.deathMode === 'kick' ? agar.deathMode : 'kick';
-  return { pelletCount, borderDeath, pelletGrowthMul, speedMinMul, speedCurvePow, boostEnabled, boostMul, deathMode };
+
+  // PVP (player eats player)
+  const pvpEnabled = typeof agar?.pvpEnabled === 'boolean' ? agar.pvpEnabled : false;
+  // Size ratio required to eat: predator.r >= victim.r * pvpEatRatio
+  const pvpEatRatio = Number.isFinite(agar?.pvpEatRatio) ? clamp(agar.pvpEatRatio, 1.01, 3.0) : 1.15;
+  // How deep the victim must be inside the predator to count as eaten.
+  // We compute: eatDist = predator.r - victim.r * pvpEatOffsetMul
+  const pvpEatOffsetMul = Number.isFinite(agar?.pvpEatOffsetMul) ? clamp(agar.pvpEatOffsetMul, 0.0, 1.25) : 0.25;
+  // How much of the victim's area converts into predator growth.
+  const pvpGrowthMul = Number.isFinite(agar?.pvpGrowthMul) ? clamp(agar.pvpGrowthMul, 0.0, 2.0) : 1.0;
+
+  return {
+    pelletCount,
+    borderDeath,
+    pelletGrowthMul,
+    speedMinMul,
+    speedCurvePow,
+    boostEnabled,
+    boostMul,
+    deathMode,
+    pvpEnabled,
+    pvpEatRatio,
+    pvpEatOffsetMul,
+    pvpGrowthMul
+  };
 }
 
 export function createWorldState({ width, height }, { movement, agar } = {}) {
@@ -232,7 +256,7 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
             p.r = 18;
             p.score = 0;
           } else {
-            died.push({ id, score: p.score });
+            died.push({ id, score: p.score, reason: 'border' });
           }
           continue;
         }
@@ -256,9 +280,70 @@ export function createWorldState({ width, height }, { movement, agar } = {}) {
       }
     }
 
+    // PVP: player eats player
+    if (agarCfg.pvpEnabled && players.size >= 2) {
+      // Deterministic processing: larger first, stable tie-break by id.
+      const arr = Array.from(players.values());
+      arr.sort((a, b) => (b.r - a.r) || String(a.id).localeCompare(String(b.id)));
+
+      const eatenThisStep = new Set();
+
+      for (let i = 0; i < arr.length; i++) {
+        const predator = arr[i];
+        if (!predator) continue;
+        if (eatenThisStep.has(predator.id)) continue;
+        if (!players.has(predator.id)) continue;
+
+        for (let j = arr.length - 1; j >= 0; j--) {
+          const victim = arr[j];
+          if (!victim) continue;
+          if (victim.id === predator.id) continue;
+          if (eatenThisStep.has(victim.id)) continue;
+          if (!players.has(victim.id)) continue;
+
+          // Must be sufficiently larger.
+          if (!(predator.r >= victim.r * agarCfg.pvpEatRatio)) continue;
+
+          const dx = predator.x - victim.x;
+          const dy = predator.y - victim.y;
+          const d2 = dx * dx + dy * dy;
+
+          const eatDist = predator.r - victim.r * agarCfg.pvpEatOffsetMul;
+          if (eatDist <= 0) continue;
+          if (d2 > eatDist * eatDist) continue;
+
+          // Eat!
+          const victimScore = victim.score ?? 0;
+
+          // Growth: add (victim area * pvpGrowthMul) to predator.
+          const predArea = Math.PI * predator.r * predator.r;
+          const vicArea = Math.PI * victim.r * victim.r;
+          const nextArea = predArea + vicArea * agarCfg.pvpGrowthMul;
+          predator.r = clamp(Math.sqrt(nextArea / Math.PI), 12, 220);
+
+          // Score bump for kills (keep it meaningful vs pellets).
+          predator.score = (predator.score ?? 0) + Math.max(10, Math.round(victim.r));
+
+          if (agarCfg.deathMode === 'respawn') {
+            // Respawn victim immediately (no game over), reset to base size.
+            events.push({ type: 'respawn', id: victim.id, score: victimScore, reason: 'eaten', by: predator.id });
+            victim.x = rand(100, width - 100);
+            victim.y = rand(100, height - 100);
+            victim.vx = 0;
+            victim.vy = 0;
+            victim.r = 18;
+            victim.score = 0;
+          } else {
+            died.push({ id: victim.id, score: victimScore, reason: 'eaten', by: predator.id });
+            eatenThisStep.add(victim.id);
+          }
+        }
+      }
+    }
+
     if (died.length) {
       for (const d of died) {
-        events.push({ type: 'dead', id: d.id, score: d.score, reason: 'border' });
+        events.push({ type: 'dead', id: d.id, score: d.score, reason: d.reason || 'dead', by: d.by });
         removePlayer(d.id);
       }
     }
