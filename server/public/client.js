@@ -2418,8 +2418,8 @@ setInterval(() => {
 
 // Input uplink: only send when changed (reduces upstream bandwidth).
 const INPUT_SEND_HZ = 20;
-// Set to Infinity to disable forced periodic sends (true send-on-change only).
-const INPUT_FORCE_EVERY_MS = Infinity;
+// Low-frequency keepalive (send even if unchanged) to avoid stuck input if a packet is lost.
+const INPUT_FORCE_EVERY_MS = 6000;
 const INPUT_AXIS_QUANT = 127; // quantize [-1..1] to int steps to avoid jitter spam
 let lastSentInput = null;
 let lastSentInputAt = 0;
